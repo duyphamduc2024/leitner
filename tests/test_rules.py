@@ -184,6 +184,49 @@ r = post("/api/answer", {"concept_id": cid, "answer": "nope"})
 check("box 6 miss -> box 1", r["to_box"] == 1)
 check("learned tally is 'ever reached'", r["state"]["learned"] == 100, r["state"]["learned"])
 
+print("\n== proficiency levels ==")
+for learned, want in [(0, "Starting out"), (99, "Starting out"), (100, "Survival"),
+                      (499, "Survival"), (500, "A1 · Breakthrough"),
+                      (1000, "A2 · Waystage"), (2000, "B1 · Threshold"),
+                      (4000, "B2 · Vantage"), (7000, "C1 · Advanced"),
+                      (10000, "C2 · Mastery"), (99999, "C2 · Mastery")]:
+    check("%6d -> %s" % (learned, want), A.level_for(learned)["name"] == want,
+          A.level_for(learned)["name"])
+check("top level reports no next", A.level_for(12000)["top"] is True)
+check("top level sits at 100%", A.level_for(12000)["pct"] == 100)
+lv = A.level_for(300)
+check("mid-level counts down to the next", lv["to_next"] == 200, lv)
+check("mid-level percentage", lv["pct"] == 50, lv)
+check("level 0 is not 'top'", A.level_for(0)["top"] is False)
+
+print("\n== milestones ==")
+p = j(c.get("/api/progress?profile=default"))
+check("progress lists both sessions", len(p["languages"]) == 2, len(p["languages"]))
+check("milestones start at one deck", p["milestones"][0] == 20, p["milestones"])
+check("profile total is the sum",
+      p["total_learned"] == sum(L["learned"] for L in p["languages"]))
+zh = [L for L in p["languages"] if L["learn"] == "zh"][0]
+check("the worked session has 100 learned", zh["learned"] == 100, zh["learned"])
+done = [m["n"] for m in zh["milestones"] if m["done"]]
+check("20/50/100 unlocked", done == [20, 50, 100], done)
+check("200 still locked", not [m for m in zh["milestones"] if m["n"] == 200][0]["done"])
+check("unlocked milestones carry a date",
+      all(m["at"] for m in zh["milestones"] if m["done"]),
+      [(m["n"], m["at"]) for m in zh["milestones"]])
+check("locked milestones carry none",
+      all(m["at"] is None for m in zh["milestones"] if not m["done"]))
+check("milestone date looks like a date",
+      len([m for m in zh["milestones"] if m["n"] == 100][0]["at"]) == 10)
+check("reachability reflects the pair's pool",
+      all(m["reachable"] == (m["n"] <= zh["pool"]) for m in zh["milestones"]))
+check("session level at 100 words is Survival", zh["level"]["name"] == "Survival", zh["level"])
+es = [L for L in p["languages"] if L["learn"] == "es"][0]
+check("untouched session has nothing unlocked",
+      es["learned"] == 0 and not any(m["done"] for m in es["milestones"]))
+check("languages sorted by words learned",
+      [L["learned"] for L in p["languages"]] ==
+      sorted([L["learned"] for L in p["languages"]], reverse=True))
+
 print("\n== retire, isolation, persistence ==")
 s = post("/api/retire", {"concept_id": cid})
 check("retired card leaves the boxes", s["total_cards"] == 99, s["total_cards"])

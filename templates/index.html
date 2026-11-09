@@ -23,6 +23,9 @@
       <select id="profile-select"></select>
     </label>
     <button id="btn-new-profile" class="btn btn-ghost" title="Create a new profile">+ Profile</button>
+    <button id="btn-progress" class="btn btn-ghost" title="Milestones and proficiency">
+      ◎ Progress
+    </button>
     <button id="btn-switch" class="btn btn-primary" title="Change which language you are learning">
       ⇄ Switch language
     </button>
@@ -34,6 +37,13 @@
     <div class="stat stat-hero">
       <span class="stat-value" id="stat-learned">0</span>
       <span class="stat-label">Words learned <small>(reached box 6)</small></span>
+      <div class="level-strip">
+        <div class="level-top">
+          <span class="level-name" id="stat-level">Starting out</span>
+          <span class="level-next" id="stat-next"></span>
+        </div>
+        <div class="meter"><div class="meter-fill" id="stat-meter"></div></div>
+      </div>
     </div>
     <div class="stat">
       <span class="stat-value" id="stat-active">0<small>/100</small></span>
@@ -183,6 +193,25 @@
         <button class="btn btn-primary" id="picker-start" disabled>Start learning</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------- progress -->
+<div class="overlay" id="progress" hidden>
+  <div class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Progress</h2>
+        <p class="panel-sub" id="progress-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="progress-close">Close ✕</button>
+    </div>
+    <div class="progress-body" id="progress-body"></div>
+    <p class="progress-foot">
+      Levels are a vocabulary gauge mapped onto the CEFR ladder. Real CEFR also
+      covers grammar, listening and speaking, so treat this as an estimate of
+      how much you can read and recognise, not a certificate.
+    </p>
   </div>
 </div>
 

@@ -207,6 +207,76 @@
       }).catch(function (e) { toast(e.message); });
   }
 
+  // -------------------------------------------------------------- progress
+  function openProgress() {
+    api("/api/progress").then(function (p) {
+      $("progress-sub").textContent = p.languages.length
+        ? "Profile " + p.profile + " · " + p.total_learned +
+          " word" + (p.total_learned === 1 ? "" : "s") + " learned across " +
+          p.languages.length + " language" + (p.languages.length === 1 ? "" : "s")
+        : "Profile " + p.profile;
+
+      var body = $("progress-body");
+      body.innerHTML = "";
+
+      if (!p.languages.length) {
+        var e = document.createElement("p");
+        e.className = "prog-empty";
+        e.textContent = "No learning sessions yet. Pick a language and the " +
+          "milestones will start filling in.";
+        body.appendChild(e);
+        $("progress").hidden = false;
+        return;
+      }
+
+      p.languages.forEach(function (L) {
+        var card = document.createElement("div");
+        card.className = "prog-lang";
+
+        var head = document.createElement("div");
+        head.className = "prog-head";
+        head.innerHTML =
+          '<div class="prog-title">' + L.learn_name +
+          ' <em>from ' + L.know_name + "</em></div>" +
+          '<div class="prog-count"><b>' + L.learned + "</b> / " + L.pool +
+          " words · " + L.pool_pct + "%</div>";
+        card.appendChild(head);
+
+        var lv = document.createElement("div");
+        lv.className = "prog-level";
+        lv.innerHTML =
+          '<div class="prog-level-top">' +
+            '<span class="prog-level-name">' + L.level.name + "</span>" +
+            '<span class="level-next">' +
+              (L.level.top ? "top level"
+                           : L.level.to_next + " more to " + L.level.next_name) +
+            "</span>" +
+          "</div>" +
+          '<div class="meter"><div class="meter-fill" style="width:' +
+            L.level.pct + '%"></div></div>' +
+          '<p class="prog-blurb">' + L.level.blurb + "</p>";
+        card.appendChild(lv);
+
+        var badges = document.createElement("div");
+        badges.className = "badges";
+        L.milestones.forEach(function (m) {
+          var b = document.createElement("div");
+          b.className = "badge " + (m.done ? "got" : m.reachable ? "locked" : "unreachable");
+          b.title = m.done ? "Reached on " + m.at
+                           : m.reachable ? (m.n - L.learned) + " words to go"
+                                         : "Beyond the " + L.pool + " words this pair has";
+          b.innerHTML = '<span class="badge-n">' + m.n + "</span>" +
+            '<span class="badge-when">' +
+            (m.done ? m.at : m.reachable ? "locked" : "n/a") + "</span>";
+          badges.appendChild(b);
+        });
+        card.appendChild(badges);
+        body.appendChild(card);
+      });
+      $("progress").hidden = false;
+    }).catch(function (e) { toast(e.message); });
+  }
+
   // ---------------------------------------------------------------- render
   function render(s) {
     state = s;
@@ -235,6 +305,11 @@
     $("test-input").placeholder = "meaning in " + s.session.know_name + "…";
 
     $("stat-learned").textContent = s.learned;
+    $("stat-level").textContent = s.level.name;
+    $("stat-next").textContent = s.level.top
+      ? "top level"
+      : s.level.to_next + " to " + s.level.next_name.split(" · ")[0];
+    $("stat-meter").style.width = s.level.pct + "%";
     $("stat-active").innerHTML = s.active_count + "<small>/" + s.active_cap + "</small>";
     $("stat-deck").textContent = s.deck.number ? "#" + s.deck.number : "—";
     $("stat-pool").innerHTML = s.words_used + "<small>/" + s.words_available + "</small>";
@@ -496,6 +571,8 @@
   }
 
   // -------------------------------------------------------------- wiring
+  $("btn-progress").onclick = openProgress;
+  $("progress-close").onclick = function () { $("progress").hidden = true; };
   $("btn-switch").onclick = function () { openPicker(!!state.session); };
   $("picker-close").onclick = closePicker;
   $("picker-start").onclick = function () { startSession(pick.learn, pick.know); };
@@ -565,6 +642,10 @@
   };
 
   document.addEventListener("keydown", function (e) {
+    if (!$("progress").hidden) {
+      if (e.key === "Escape") $("progress").hidden = true;
+      return;
+    }
     if (!$("picker").hidden) {
       if (e.key === "Escape" && state && state.session) closePicker();
       return;

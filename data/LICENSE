@@ -1,0 +1,52 @@
+Licence and attribution for the word data
+=========================================
+
+The files in this directory — concepts.json and core_concepts.tsv — are
+licensed under the
+
+    Creative Commons Attribution-ShareAlike 4.0 International Licence
+    (CC BY-SA 4.0)  ·  https://creativecommons.org/licenses/by-sa/4.0/
+
+This is NOT the MIT licence that covers the rest of the repository. concepts.json
+is built from Creative Commons BY-SA dictionaries, so it is a derivative work and
+must stay under a compatible share-alike licence. If you redistribute it, modified
+or not, you must keep this licence, keep the attributions below, and release your
+changes under CC BY-SA 4.0.
+
+core_concepts.tsv is written by hand by this project's author and is offered under
+the same licence so that the two files can be used together without confusion.
+
+
+Sources
+-------
+
+Spanish — FreeDict eng-spa
+    https://freedict.org · derived from the English Wiktionary
+    Licence: CC BY-SA 3.0, relicensed here to 4.0 as that licence permits.
+
+Mandarin Chinese — CC-CEDICT
+    https://www.mdbg.net/chinese/dictionary?page=cc-cedict
+    Published by MDBG. Referenced works: CEDICT, Copyright (C) 1997, 1998
+    Paul Andrew Denisowski.
+    Licence: CC BY-SA 4.0.
+
+Vietnamese — Vietnamese Wiktionary, English section, via kaikki.org
+    https://kaikki.org/viwiktionary/ · extracted by wiktextract from
+    https://vi.wiktionary.org
+    Licence: CC BY-SA 4.0 (Wiktionary text, also available under the GFDL).
+
+Word ordering — hermitdave/FrequencyWords
+    https://github.com/hermitdave/FrequencyWords
+    Frequency lists built from the OpenSubtitles corpus.
+    Licence: MIT, Copyright (c) 2016 Hermit Dave.
+
+Pinyin, part-of-speech tags and the choice of which word represents each
+concept are produced by build_concepts.py in this repository.
+
+
+If you only want the code
+-------------------------
+
+Delete data/concepts.json and run `python3 build_concepts.py` to regenerate it
+from the sources yourself. The MIT licence then covers everything you hold,
+and the rebuilt file carries the same obligations as above.

@@ -32,6 +32,53 @@ BOXES = 6
 LEARNED_BOX = 6
 SCHEMA_VERSION = 2
 
+# Words-learned milestones. The first is one deck, so there is something to
+# reach on day one; after that they roughly double.
+MILESTONES = (20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)
+
+# Vocabulary size mapped onto the CEFR ladder. These are the usual rough
+# estimates for how many words sit behind each level - real CEFR also covers
+# grammar, listening and speaking, so this is a vocabulary gauge and the UI
+# says as much.
+LEVELS = (
+    (0,     "Starting out", "Nothing banked yet"),
+    (100,   "Survival",     "Enough for greetings and basic needs"),
+    (500,   "A1 · Breakthrough", "Familiar everyday expressions"),
+    (1000,  "A2 · Waystage",     "Routine exchanges on familiar matters"),
+    (2000,  "B1 · Threshold",    "Most everyday conversation"),
+    (4000,  "B2 · Vantage",      "Complex text and abstract topics"),
+    (7000,  "C1 · Advanced",     "Fluent, flexible, implicit meaning"),
+    (10000, "C2 · Mastery",      "Virtually everything you read or hear"),
+)
+
+
+def level_for(learned):
+    """(current level, next level or None, % of the way to the next)."""
+    cur = LEVELS[0]
+    nxt = None
+    for i, lv in enumerate(LEVELS):
+        if learned >= lv[0]:
+            cur = lv
+            nxt = LEVELS[i + 1] if i + 1 < len(LEVELS) else None
+        else:
+            break
+    if nxt is None:
+        pct = 100
+    else:
+        span = nxt[0] - cur[0]
+        pct = int(round(100.0 * (learned - cur[0]) / span)) if span else 100
+    return {
+        "name": cur[1],
+        "blurb": cur[2],
+        "at": cur[0],
+        "next_name": nxt[1] if nxt else None,
+        "next_at": nxt[0] if nxt else None,
+        "to_next": (nxt[0] - learned) if nxt else 0,
+        "pct": max(0, min(100, pct)),
+        "top": nxt is None,
+    }
+
+
 LANGUAGES = {
     "en": {"name": "English",          "native": "English",    "voice": "en-US"},
     "es": {"name": "Spanish",          "native": "Español",    "voice": "es-ES"},
@@ -252,9 +299,18 @@ def touch_session(sess):
     db().commit()
 
 
+def session_learned(session_id):
+    return db().execute(
+        "SELECT COUNT(*) FROM card WHERE session_id = ? AND learned_at IS NOT NULL",
+        (session_id,)).fetchone()[0]
+
+
 def session_json(row):
+    learned = session_learned(row["id"])
     return {
         "id": row["id"],
+        "learned": learned,
+        "level": level_for(learned),
         "learn": row["learn_lang"],
         "know": row["know_lang"],
         "learn_name": LANGUAGES[row["learn_lang"]]["name"],
@@ -367,9 +423,7 @@ def build_state(prof, sess):
                   % (current_deck, NEW_DECK_MIN_BOX, DECK_SIZE))
         can_new_deck = True
 
-    learned = conn.execute(
-        "SELECT COUNT(*) FROM card WHERE session_id = ? AND learned_at IS NOT NULL",
-        (sid,)).fetchone()[0]
+    learned = session_learned(sid)
 
     base.update({
         "session": session_json(sess),
@@ -381,6 +435,8 @@ def build_state(prof, sess):
             "reason": reason,
         },
         "learned": learned,
+        "level": level_for(learned),
+        "next_milestone": next((m for m in MILESTONES if m > learned), None),
         "active_count": len(active),
         "active_cap": ACTIVE_CAP,
         "total_cards": len(rows),
@@ -590,6 +646,54 @@ def api_answer():
         "to_box": new_box,
         "learned": correct and new_box >= LEARNED_BOX,
         "state": build_state(prof, get_session(prof, sess["id"])),
+    })
+
+
+@app.route("/api/progress")
+def api_progress():
+    """Milestones and proficiency for every language in this profile."""
+    prof, _ = current()
+    conn = db()
+    rows = conn.execute(
+        "SELECT * FROM session WHERE profile_id = ? ORDER BY last_used DESC",
+        (prof["id"],)).fetchall()
+
+    langs, total = [], 0
+    for r in rows:
+        # Dates come from the cards themselves: the nth word to reach box 6
+        # carries the date that milestone was hit.
+        dates = [x[0] for x in conn.execute(
+            "SELECT learned_at FROM card WHERE session_id = ? AND learned_at IS NOT NULL"
+            " ORDER BY learned_at", (r["id"],)).fetchall()]
+        learned = len(dates)
+        total += learned
+        pool = len(pair_pool(r["learn_lang"], r["know_lang"]))
+        langs.append({
+            "id": r["id"],
+            "learn": r["learn_lang"],
+            "know": r["know_lang"],
+            "learn_name": LANGUAGES[r["learn_lang"]]["name"],
+            "know_name": LANGUAGES[r["know_lang"]]["name"],
+            "learned": learned,
+            "pool": pool,
+            "pool_pct": int(round(100.0 * learned / pool)) if pool else 0,
+            "level": level_for(learned),
+            "milestones": [
+                {"n": m,
+                 "done": learned >= m,
+                 "at": dates[m - 1][:10] if learned >= m else None,
+                 "reachable": m <= pool}
+                for m in MILESTONES
+            ],
+        })
+
+    langs.sort(key=lambda x: -x["learned"])
+    return jsonify({
+        "profile": prof["name"],
+        "total_learned": total,
+        "languages": langs,
+        "milestones": list(MILESTONES),
+        "levels": [{"at": a, "name": n, "blurb": b} for a, n, b in LEVELS],
     })
 
 
