@@ -157,9 +157,14 @@ per-word cost and a network round trip. For single-word drilling the quality dif
 doesn't justify either.
 
 macOS ships a usable voice for all four — **Samantha** (en-US), **Mónica** (es-ES),
-**Linh** (vi-VN), **Tingting** (zh-CN) — and the app prefers the plainly-named voice for the
-session's language over the novelty ones, remembering your choice per language. Open
-**Audio & settings** to change voice, speed, or turn off automatic playback.
+**Linh** (vi-VN), **Tingting** (zh-CN) — and the app picks the best one for the session's
+language, remembering your choice per language. It prefers the OS default voice, then real
+voices, and pushes macOS's joke voices (Bad News, Zarvox, Boing) and its older low-quality
+ones to the bottom of the list. Open **Audio & settings** to change voice, speed, or turn off
+automatic playback.
+
+A card can list several accepted words — "hello, hi" — but audio speaks only the first, so a
+card is never read out twice.
 
 No voice for a language? On macOS: System Settings → Accessibility → Spoken Content →
 System Voice → Manage Voices, add one, reload. Everything else works without it.
@@ -293,11 +298,11 @@ LANGUAGES = {...}       # code -> display name, native name, speech-synthesis ta
 python3 tests/test_rules.py
 ```
 
-101 checks against a throwaway database: the concept table and every language pair, grading in
+108 checks against a throwaway database: the concept table and every language pair, grading in
 all four languages (including Vietnamese tone-stripping and Mandarin pinyin), session creation
 and isolation, the Learn gate, promotion and demotion, the new-deck gate, the 100-card cap,
-the learned counter, proficiency levels, milestone unlocking and dates, retiring, reset, and
-profiles. No network, no fixtures to install.
+the learned counter, proficiency levels, milestone unlocking and dates, the text sent to
+audio, retiring, reset, and profiles. No network, no fixtures to install.
 
 ---
 

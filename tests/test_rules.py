@@ -119,6 +119,31 @@ check("mandarin prompt carries pinyin", all(x["pinyin"] for x in cards), cards[0
 s = post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cards]})
 check("box 1 test unlocked", s["can_test_box1"] is True)
 
+print("\n== audio text ==")
+# Some concepts carry several accepted words in a language ("hello, hi",
+# "vâng, dạ, có"). Which land in deck 1 depends on the pair, so assert
+# against the table. Spanish and Mandarin have none: the generated tier
+# stores one word per language, and the curated core happens to give those
+# two a single word each.
+multi = {L: sum(1 for x in A.CONCEPTS if len(x[L]) > 1) for L in ("en", "es", "vi", "zh")}
+check("multi-variant concepts exist to exercise this",
+      multi["en"] > 50 and multi["vi"] > 10, multi)
+sample = next(x for x in A.CONCEPTS if len(x["en"]) > 1)
+check("a multi-variant prompt would read as a list",
+      ", ".join(sample["en"]) != sample["en"][0], sample["en"])
+check("audio says one word, not the whole list",
+      all(x["speak"] == x["prompt"].split(", ")[0] for x in cards),
+      [(x["prompt"], x["speak"]) for x in cards[:4]])
+check("audio text never contains a comma",
+      all("," not in x["speak"] for x in cards),
+      [x["speak"] for x in cards if "," in x["speak"]][:3])
+check("audio text is never empty", all(x["speak"] for x in cards))
+_t = j(c.get("/api/test/1" + S))["cards"]
+check("test cards carry audio text too", all(x["speak"] for x in _t))
+_r = post("/api/answer", {"concept_id": cards[0]["concept_id"], "answer": "__wrong__"})
+check("the answer response carries audio text",
+      _r["speak"] == _r["prompt"].split(", ")[0], (_r["prompt"], _r["speak"]))
+
 print("\n== promote / demote ==")
 w = cards[0]
 r = post("/api/answer", {"concept_id": w["concept_id"], "answer": w["answer"].split(",")[0]})

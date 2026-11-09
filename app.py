@@ -340,6 +340,10 @@ def card_json(row, sess, reveal=False):
     out = {
         "concept_id": row["concept_id"],
         "prompt": ", ".join(c[learn]),
+        # What audio should say. The prompt lists every accepted variant
+        # ("hello, hi"), and speaking all of them sounds like the word is
+        # being repeated, so audio gets the primary one only.
+        "speak": c[learn][0] if c[learn] else "",
         "pinyin": c.get("pinyin", "") if learn == "zh" else "",
         "pos": c.get("pos", ""),
         "box": row["box"],
@@ -639,6 +643,7 @@ def api_answer():
         "correct": correct,
         "concept_id": cid,
         "prompt": ", ".join(concept[learn]),
+        "speak": concept[learn][0] if concept[learn] else "",
         "answer": ", ".join(concept[know]),
         "answer_pinyin": concept.get("pinyin", "") if know == "zh" else "",
         "pinyin": concept.get("pinyin", "") if learn == "zh" else "",

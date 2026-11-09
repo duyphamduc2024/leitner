@@ -67,17 +67,36 @@
     renderVoiceOptions();
   }
 
-  /* Voices for the language currently being learned. macOS ships a pile of
-     novelty voices ("Eddy (Chinese (China))") beside the real ones, so the
-     plainly-named voices go first. */
+  /* macOS joke voices. These have plain names, so "does the name contain a
+     parenthesis" - which does separate the localised fun voices like
+     "Eddy (Chinese (China))" - misses them entirely, and English would
+     otherwise default to Albert. */
+  var JOKE_VOICES = ["bad news", "bahh", "bells", "boing", "bubbles", "cellos",
+    "deranged", "good news", "hysterical", "jester", "organ", "pipe organ",
+    "superstar", "trinoids", "whisper", "wobble", "zarvox"];
+  /* Older, lower-quality system voices: usable, but never the first choice. */
+  var LEGACY_VOICES = ["albert", "agnes", "bruce", "fred", "junior", "kathy",
+    "princess", "ralph", "victoria"];
+
+  function voiceRank(v, tag) {
+    var n = v.name.toLowerCase();
+    if (JOKE_VOICES.indexOf(n) >= 0) return 4;
+    if (LEGACY_VOICES.indexOf(n) >= 0) return 3;
+    if (v.name.indexOf("(") >= 0) return 2;   // localised novelty voices
+    return v.default ? 0 : 1;                 // the OS default is the best bet
+  }
+
+  /* Voices for the language currently being learned, best first. */
   function voicesFor(tag) {
     var base = (tag || "en-US").split("-")[0].toLowerCase();
     return voices.filter(function (v) {
       return v.lang.toLowerCase().indexOf(base) === 0;
     }).sort(function (a, b) {
-      var novelty = function (v) { return v.name.indexOf("(") >= 0 ? 1 : 0; };
-      var exact = function (v) { return v.lang.toLowerCase().replace("_", "-") === tag.toLowerCase() ? 0 : 1; };
-      return novelty(a) - novelty(b) || exact(a) - exact(b) || a.name.localeCompare(b.name);
+      var exact = function (v) {
+        return v.lang.toLowerCase().replace("_", "-") === tag.toLowerCase() ? 0 : 1;
+      };
+      return voiceRank(a, tag) - voiceRank(b, tag) ||
+             exact(a) - exact(b) || a.name.localeCompare(b.name);
     });
   }
 
@@ -132,6 +151,12 @@
   }
 
   function maybeSpeak(text) { if ($("autoplay").checked) speak(text); }
+
+  /* The word audio should say for a card: the primary variant, not the whole
+     "hello, hi" list shown on screen. */
+  function primary(card) {
+    return (card && (card.speak || card.prompt)) || "";
+  }
 
   // ------------------------------------------------------- language picker
   var pick = { learn: null, know: null };
@@ -434,7 +459,7 @@
     $("learn-prev").disabled = learn.i === 0;
     $("learn-next").textContent = learn.i === learn.cards.length - 1 ? "Finish ✓" : "Next →";
     setProgress(learn.i + 1, learn.cards.length);
-    maybeSpeak(c.prompt);
+    maybeSpeak(c.speak || c.prompt);
   }
 
   function learnStep(delta) {
@@ -487,7 +512,7 @@
     $("panel-sub").textContent = "Card " + (test.i + 1) + " of " + test.cards.length +
       " · " + test.right + " right, " + test.wrong + " wrong";
     setProgress(test.i, test.cards.length);
-    maybeSpeak(c.prompt);
+    maybeSpeak(c.speak || c.prompt);
   }
 
   function submitAnswer(ev) {
@@ -620,8 +645,8 @@
   $("btn-close").onclick = closePanel;
   $("learn-next").onclick = function () { learnStep(1); };
   $("learn-prev").onclick = function () { learnStep(-1); };
-  $("learn-speak").onclick = function () { speak(learn.cards[learn.i].prompt); };
-  $("test-speak").onclick = function () { speak(test.cards[test.i].prompt); };
+  $("learn-speak").onclick = function () { speak(primary(learn.cards[learn.i])); };
+  $("test-speak").onclick = function () { speak(primary(test.cards[test.i])); };
   $("test-form").onsubmit = submitAnswer;
   $("verdict-next").onclick = nextTestCard;
   $("btn-retire").onclick = retireCard;
@@ -655,7 +680,7 @@
     if (!$("stage-learn").hidden) {
       if (e.key === "ArrowRight") { e.preventDefault(); learnStep(1); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); learnStep(-1); }
-      else if (e.key === " ") { e.preventDefault(); speak(learn.cards[learn.i].prompt); }
+      else if (e.key === " ") { e.preventDefault(); speak(primary(learn.cards[learn.i])); }
       return;
     }
     if (!$("stage-test").hidden && e.key === "Enter" && !$("verdict").hidden) {
