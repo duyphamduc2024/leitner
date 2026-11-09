@@ -24,7 +24,7 @@ Two tiers, concatenated in order:
        English order  OpenSubtitles 2018 frequency list (hermitdave)
        Spanish        FreeDict eng-spa, ~64k headwords (Wiktionary-derived)
        Mandarin       CC-CEDICT, ~120k entries, with pinyin
-       Vietnamese     Wiktionary via kaikki.org, ~32k usable entries
+       Vietnamese     Vietnamese Wiktionary via kaikki.org, ~123k entries
 
      For each English concept the candidate words in a language are ranked by
      *reverse consistency* first - a word whose own primary sense is this
@@ -33,8 +33,8 @@ Two tiers, concatenated in order:
 Not every concept exists in every language, so the table is sparse and each
 pair has its own usable word count. The app reports that per pair.
 
-    python3 build_concepts.py              # 10000 concepts
-    python3 build_concepts.py --limit 4000
+    python3 build_concepts.py              # everything the sources support
+    python3 build_concepts.py --limit 4000 # stop at 4000 words per language
     python3 build_concepts.py --core-only  # no network, the curated core only
 """
 import argparse, collections, gzip, json, os, re, sys, tarfile, unicodedata
@@ -49,7 +49,14 @@ FREQ = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/conte
 DICT_ES = "https://download.freedict.org/dictionaries/eng-spa/2025.11.23/freedict-eng-spa-2025.11.23.src.tar.xz"
 DICT_ES_DICTD = "https://download.freedict.org/dictionaries/eng-spa/2025.11.23/freedict-eng-spa-2025.11.23.dictd.tar.xz"
 CEDICT = "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz"
-KAIKKI_VI = "https://kaikki.org/dictionary/Vietnamese/kaikki.org-dictionary-Vietnamese.jsonl"
+# The Vietnamese Wiktionary's English section: English headwords defined in
+# Vietnamese. 123k entries against the 32k of the English Wiktionary's
+# Vietnamese section, and the glosses are the everyday word rather than a
+# Sino-Vietnamese literary morpheme (tree -> cây, not thụ). The English
+# Wiktionary's Vietnamese section was tried first and dropped: it is a third
+# the size and its ranking favours literary morphemes (small -> em).
+KAIKKI_VI_EN = ("https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Anh/"
+                "kaikki.org-dictionary-Ti%E1%BA%BFngAnh.jsonl")
 
 LANGS = ("en", "es", "vi", "zh")
 
@@ -216,35 +223,58 @@ def load_chinese():
 VI_WORD = re.compile(
     r"^[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹý]"
     r"[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹý ]*$")
-VI_SKIP_POS = {"character", "romanization", "prefix", "suffix", "infix",
-               "name", "classifier", "syllable", "symbol"}
+VN_MARKS = set("àáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗ"
+               "ộớờởỡợụủứừửữựỳỵỷỹý")
+VI_EN_SKIP_POS = {"name", "character", "romanization", "prefix", "suffix",
+                  "phrase", "proverb", "abbrev"}
 
 
-def load_vietnamese():
-    """english -> {vietnamese word: sense_index}"""
-    path = fetch(KAIKKI_VI, "vi.jsonl")
-    inv = collections.defaultdict(dict)
+def load_vietnamese(vi_rank):
+    """english -> {vietnamese word: position}
+
+    Entries are English headwords whose definitions are written in
+    Vietnamese, e.g. small -> "Nhỏ, bé, chật." Senses come in reading order,
+    so the position doubles as a quality signal the same way it does for the
+    other dictionaries.
+    """
+    path = fetch(KAIKKI_VI_EN, "en_in_vi.jsonl")
+    out = collections.defaultdict(dict)
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             try:
                 e = json.loads(line)
             except ValueError:
                 continue
-            w = (e.get("word") or "").lower().strip()
-            if not w or len(w) > 24 or not VI_WORD.match(w):
+            w = (e.get("word") or "").strip().lower()
+            if not re.fullmatch(r"[a-z][a-z'\-]{1,24}", w):
                 continue
-            if e.get("pos") in VI_SKIP_POS:
+            if e.get("pos") in VI_EN_SKIP_POS:
                 continue
-            for si, sense in enumerate(e.get("senses") or []):
-                tags = sense.get("tags") or []
-                if "obsolete" in tags or "archaic" in tags:
-                    continue
+            i = 0
+            for sense in (e.get("senses") or []):
                 for gloss in (sense.get("glosses") or []):
-                    for piece in norm_gloss(gloss):
-                        cur = inv[piece].get(w)
-                        if cur is None or si < cur:
-                            inv[piece][w] = si
-    return inv
+                    gloss = re.sub(r"\([^)]*\)", " ", gloss).strip().rstrip(".").strip()
+                    for part in re.split(r"[;,]", gloss):
+                        cand = re.sub(r"\s+", " ", part).strip().lower()
+                        if not cand or len(cand) > 24 or cand.count(" ") > 3:
+                            continue
+                        if not VI_WORD.match(cand):
+                            continue
+                        # Reject stray non-Vietnamese tokens the dump carries
+                        # ("bridge" -> "brit"). A real word is a compound, or
+                        # carries a Vietnamese diacritic, or - for the many
+                        # genuine plain-ASCII words like "con" and "tay" - is
+                        # common enough to sit high in the frequency list.
+                        # Subtitle noise lands far down it.
+                        if not (" " in cand or (VN_MARKS & set(cand))
+                                or vi_rank.get(cand, 10 ** 6) < 12000):
+                            continue
+                        if cand not in out[w]:
+                            out[w][cand] = i
+                            i += 1
+            if not out[w]:
+                out.pop(w, None)
+    return out
 
 
 # --------------------------------------------------------------------- core
@@ -273,8 +303,9 @@ def load_core():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=10000,
-                    help="target number of words PER LANGUAGE (not total)")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="stop once every language has this many words; "
+                         "0 (the default) builds everything the sources support")
     ap.add_argument("--max-concepts", type=int, default=40000,
                     help="stop growing the table past this, whatever the coverage")
     ap.add_argument("--core-only", action="store_true")
@@ -317,7 +348,7 @@ def main():
         sys.stderr.write("loading dictionaries ...\n")
         es_dict = load_spanish()
         zh_inv = load_chinese()
-        vi_inv = load_vietnamese()
+        vi_inv = load_vietnamese(vi_rank)
         sys.stderr.write("  es %d  zh %d  vi %d english keys\n"
                          % (len(es_dict), len(zh_inv), len(vi_inv)))
 
@@ -379,7 +410,7 @@ def main():
         # out of English frequency list. Languages fill at different rates:
         # the Vietnamese source is the smallest, so it sets the pace.
         for en in sorted(en_rank, key=lambda w: en_rank[w]):
-            if all(have[l] >= args.limit for l in LANGS):
+            if args.limit and all(have[l] >= args.limit for l in LANGS):
                 break
             if len(concepts) >= args.max_concepts:
                 break
@@ -439,7 +470,7 @@ def main():
     sys.stderr.write("wrote %s\n  %d concepts | %s\n"
                      % (OUT, len(concepts),
                         "  ".join("%s %d" % (l, counts[l]) for l in LANGS)))
-    short = [l for l in LANGS if counts[l] < args.limit]
+    short = [l for l in LANGS if args.limit and counts[l] < args.limit]
     if short:
         sys.stderr.write("  note: %s below the %d target - the source "
                          "dictionary is exhausted\n"

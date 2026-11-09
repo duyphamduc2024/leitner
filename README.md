@@ -44,13 +44,13 @@ Words available per pair — each pair only uses concepts that exist in **both**
 
 | | English | Spanish | Vietnamese | Mandarin |
 |---|---|---|---|---|
-| **English** | — | 15,016 | 6,885 | 11,559 |
-| **Spanish** | 15,016 | — | 6,049 | 10,227 |
-| **Vietnamese** | 6,885 | 6,049 | — | 5,749 |
-| **Mandarin** | 11,559 | 10,227 | 5,749 | — |
+| **English** | — | 15,009 | 12,489 | 12,102 |
+| **Spanish** | 15,009 | — | 10,586 | 10,213 |
+| **Vietnamese** | 12,489 | 10,586 | — | 9,185 |
+| **Mandarin** | 12,102 | 10,213 | 9,185 | — |
 
-The Vietnamese pairs are smaller than the rest. That is the ceiling of the open Vietnamese
-dictionary, not a setting — see [The word table](#the-word-table).
+Every pair clears 10,000 words except Vietnamese–Mandarin at 9,185, which is the ceiling of
+the two source dictionaries overlapping — see [The word table](#the-word-table).
 
 ---
 
@@ -130,7 +130,7 @@ Manage Voices, add one, then reload. Everything else works without it.
 
 ## The word table
 
-`data/concepts.json` holds **16,530 concepts**. A *concept* is one meaning carrying a word in
+`data/concepts.json` holds **17,413 concepts**. A *concept* is one meaning carrying a word in
 each language:
 
 ```json
@@ -157,7 +157,7 @@ decks — realistically months of study under the 100-card cap.
 | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018) | concept ordering, and word choice within each language |
 | [FreeDict `eng-spa`](https://freedict.org) (~64k headwords) | Spanish |
 | [CC-CEDICT](https://www.mdbg.net/chinese/dictionary?page=cc-cedict) (~120k entries) | Mandarin, with pinyin |
-| [Wiktionary via kaikki.org](https://kaikki.org/dictionary/Vietnamese/) (~32k usable) | Vietnamese |
+| [Vietnamese Wiktionary via kaikki.org](https://kaikki.org/viwiktionary/) (~123k entries) | Vietnamese |
 
 Candidate words are ranked by **reverse consistency** first — if the entry for "girl" lists
 `chica` as *its* primary translation, "girl" wins over "bird" even though "bird" is the
@@ -171,10 +171,13 @@ the table.
 - **The generated tier is not hand-checked.** Accuracy is good but not perfect, and the
   further down the list you go the more likely an odd or over-literal sense. That's what
   **Retire this card** is for.
-- **Vietnamese is the weakest and the smallest.** The open Vietnamese dictionary is a third
-  the size of the others and is heavy on Sino-Vietnamese literary morphemes, which sometimes
-  outrank the everyday word. The hand-written core covers exactly the range where this
-  matters most.
+- **Vietnamese comes from the Vietnamese Wiktionary, not the English one.** Its English
+  section defines 123k English headwords *in* Vietnamese, which is both four times the size
+  of the reverse direction and markedly more accurate: the English Wiktionary's Vietnamese
+  section was tried first and dropped, because its ranking favoured Sino-Vietnamese literary
+  morphemes over everyday words (`small → em`, `tree → thụ`, instead of `nhỏ` and `cây`).
+  Vietnamese is still the smallest of the four, so Vietnamese–Mandarin is the one pair below
+  10,000.
 - **Generated nouns carry no article or classifier** — the sources have no gender field, and
   guessing from a word ending would teach wrong genders.
 - **Mandarin is simplified characters.** CC-CEDICT carries traditional too; the builder keeps
@@ -183,14 +186,15 @@ the table.
 ### Rebuilding or extending
 
 ```bash
-python3 build_concepts.py                 # the default: aim for 10,000 words per language
-python3 build_concepts.py --limit 4000    # a smaller table
+python3 build_concepts.py                 # the default: everything the sources support
+python3 build_concepts.py --limit 4000    # stop at 4,000 words per language
 python3 build_concepts.py --core-only     # no network, the 365 curated concepts only
 ```
 
-`--limit` is a target *per language*, not a total, so the table grows until each language
-reaches it or its dictionary runs out. Sources are cached in `.wordlist-cache/` (~96 MB) on
-first run; the directory is gitignored and safe to delete.
+`--limit` is a target *per language*, not a total: the table grows until every language
+reaches it. The default of 0 means no target, so the build runs the whole frequency list and
+takes whatever the dictionaries can fill. Sources are cached in `.wordlist-cache/` (~126 MB)
+on first run; the directory is gitignored and safe to delete.
 
 To fix a translation, add or edit a row in `data/core_concepts.tsv` and rebuild — core rows
 take precedence over anything generated. Columns may be left empty if you only know some of
@@ -199,7 +203,9 @@ missing one of its two sides. Cards are stored by concept id, so rebuilding with
 ordering is safe; changing the *order* would reshuffle what's in your boxes, so reset the
 session if you reorder.
 
-To add a fifth language you need a frequency list and one dictionary mapping it to English,
+When a language looks weak, the dictionary is usually the problem rather than the ranking —
+Vietnamese went from 6,885 words to 12,489 purely by swapping the source. To add a fifth
+language you need a frequency list and one dictionary mapping it to English,
 then a loader in `build_concepts.py`, a column in the TSV, and an entry in `LANGUAGES` in
 `app.py`.
 
@@ -226,7 +232,7 @@ To back up your progress, copy `data/leitner.db`.
 | `app.py` | Flask server, SQLite schema, sessions, promotion/demotion rules, per-language grading, 10 JSON endpoints |
 | `build_concepts.py` | Builds `data/concepts.json` from the curated core plus the four sources |
 | `data/core_concepts.tsv` | The 365 hand-written concepts — edit this to fix or add words |
-| `data/concepts.json` | 16,530 concepts (generated) |
+| `data/concepts.json` | 17,413 concepts (generated) |
 | `data/leitner.db` | Your progress (created on first run) |
 | `templates/index.html` | The UI — six boxes, the Learn/Test overlay, the language picker |
 | `static/app.js` | Rendering, session picker, Learn walkthrough, Test round, speech synthesis |
