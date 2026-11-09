@@ -184,10 +184,18 @@
     have.forEach(function (s) {
       var b = document.createElement("button");
       b.className = "session-btn" + (state.session && s.id === state.session.id ? " current" : "");
-      b.innerHTML = '<span class="session-main">' + s.learn_name +
-        ' <span style="opacity:.5">from</span> ' + s.know_name + "</span>" +
-        '<span class="session-meta">' + (s.deck ? "deck " + s.deck : "not started") +
-        " · " + s.pool + " words</span>";
+      b.innerHTML =
+        "<span><span class=\"session-main\">" + s.learn_name +
+          ' <span style="opacity:.5">from</span> ' + s.know_name + "</span>" +
+          '<span class="session-sub">' +
+            (s.deck ? "deck " + s.deck + " · " + s.cards + " cards in play · " +
+                      s.learned + " learned"
+                    : "not started · " + s.pool + " words available") +
+          "</span></span>" +
+        '<span class="session-meta session-right">' + s.level.name +
+          (s.last_used && s.deck ? '<span class="session-sub">' +
+             relTime(s.last_used) + "</span>" : "") +
+        "</span>";
       b.onclick = function () { startSession(s.learn, s.know); };
       list.appendChild(b);
     });
@@ -232,6 +240,258 @@
       }).catch(function (e) { toast(e.message); });
   }
 
+  // --------------------------------------------------------- profiles
+  var avatarPick = 0;
+
+  function openWho(canClose) {
+    $("who").hidden = false;
+    $("who-close").hidden = !canClose;
+    renderWho();
+  }
+
+  function closeWho() { $("who").hidden = true; }
+
+  function relTime(iso) {
+    if (!iso) return "";
+    var then = Date.parse(iso);
+    if (isNaN(then)) return "";
+    var mins = Math.round((Date.now() - then) / 60000);
+    if (mins < 2) return "just now";
+    if (mins < 60) return mins + " min ago";
+    var hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + (hrs === 1 ? " hour ago" : " hours ago");
+    var days = Math.round(hrs / 24);
+    if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
+    return new Date(then).toISOString().slice(0, 10);
+  }
+
+  function renderWho() {
+    var list = $("who-list");
+    list.innerHTML = "";
+    $("who-existing").hidden = !state.profiles.length;
+    $("who-create-label").textContent = state.profiles.length
+      ? "Or create another" : "Create a profile";
+    $("who-title").textContent = state.profiles.length
+      ? "Who's learning?" : "Welcome — set up a profile";
+
+    state.profiles.forEach(function (p) {
+      var b = document.createElement("button");
+      b.className = "who-card";
+      b.style.setProperty("--av", p.avatar.colour);
+      b.innerHTML =
+        '<span class="who-card-av" style="background:' + p.avatar.colour + '">' +
+          p.avatar.glyph + "</span>" +
+        "<span><span class=\"who-card-name\">" + escapeHtml(p.name) + "</span>" +
+        '<span class="who-card-meta">since ' + p.created_at + "</span></span>";
+      b.onclick = function () { chooseProfile(p.name); };
+      list.appendChild(b);
+    });
+
+    var grid = $("av-grid");
+    grid.innerHTML = "";
+    state.avatars.forEach(function (a) {
+      var b = document.createElement("button");
+      b.className = "av" + (a.id === avatarPick ? " on" : "");
+      b.style.setProperty("--av", a.colour);
+      b.textContent = a.glyph;
+      b.title = a.name;
+      b.onclick = function () { avatarPick = a.id; renderWho(); };
+      grid.appendChild(b);
+    });
+    validateWhoName();
+  }
+
+  function escapeHtml(t) {
+    return String(t).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function validateWhoName() {
+    var v = $("who-input").value.trim();
+    var taken = state.profiles.some(function (p) {
+      return p.name.toLowerCase() === v.toLowerCase();
+    });
+    $("who-hint").textContent = !v ? ""
+      : taken ? "\u201C" + v + "\u201D already exists — pick it above to continue as them."
+      : "";
+    $("who-create-btn").disabled = !v || taken;
+  }
+
+  function chooseProfile(name) {
+    profile = name;
+    sessionId = null;
+    localStorage.setItem("leitner.profile", name);
+    api("/api/state").then(function (st) {
+      render(st);
+      renderVoiceOptions();
+      closeWho();
+      if (!st.session) openPicker(false); else toast("Welcome back, " + name + ".");
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  function createProfile() {
+    var name = $("who-input").value.trim();
+    if (!name) return;
+    api("/api/profile", { method: "POST", body: { name: name, avatar: avatarPick } })
+      .then(function (st) {
+        profile = st.profile.name;
+        sessionId = null;
+        localStorage.setItem("leitner.profile", profile);
+        render(st);
+        renderVoiceOptions();
+        closeWho();
+        openPicker(false);
+      }).catch(function (e) { toast(e.message); });
+  }
+
+  // ----------------------------------------------------------- level
+  var placement = null;
+
+  function openLevel() {
+    if (!state.session) { toast("Pick a language first."); return; }
+    $("level").hidden = false;
+    showLevelIntro();
+  }
+
+  function closeLevel() {
+    $("level").hidden = true;
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    refresh();
+  }
+
+  function showLevelIntro() {
+    ["level-test", "level-result"].forEach(function (id) { $(id).hidden = true; });
+    $("level-intro").hidden = false;
+    $("level-fill").style.width = "0%";
+    $("level-title").textContent = "Your level";
+
+    var s = state.session;
+    $("level-sub").textContent = s.learn_name + " from " + s.know_name;
+    $("level-now").innerHTML =
+      '<div class="level-now-name">' + s.level.name + "</div>" +
+      '<div class="level-now-sum">About <b>' + s.vocab + "</b> words of " +
+      s.learn_name + " — " +
+      (s.placement
+        ? "<b>" + s.placement + "</b> estimated at placement" +
+          (s.placed_at ? " on " + s.placed_at : "") + " plus <b>" +
+          s.learned + "</b> learned here"
+        : "<b>" + s.learned + "</b> learned here, no placement taken") +
+      ". New decks start at word <b>" + (s.used + 1) + "</b>.</div>";
+
+    var grid = $("level-grid");
+    grid.innerHTML = "";
+    state.levels.forEach(function (lv) {
+      if (lv.at > s.pool) return;
+      var b = document.createElement("button");
+      b.className = "level-btn" + (s.placement === lv.at ? " on" : "");
+      b.innerHTML = lv.name + "<small>" +
+        (lv.at === 0 ? "start from the beginning" : "start around word " + lv.at) +
+        "</small>";
+      b.onclick = function () { setLevel(lv.at, lv.name); };
+      grid.appendChild(b);
+    });
+    $("level-manual-hint").textContent =
+      "Setting a level moves where new decks are drawn from. It does not mark " +
+      "anything as learned — your milestones still only count words you have " +
+      "actually drilled here.";
+  }
+
+  function setLevel(words, name) {
+    if (!confirm("Set " + state.session.learn_name + " to " + name + "?\n\n" +
+                 (words === 0
+                   ? "New decks will start from the most common word."
+                   : "New decks will start from around word " + words +
+                     ", skipping the more common ones."))) return;
+    api("/api/level", { method: "POST", body: { words: words } })
+      .then(function (st) {
+        render(st);
+        showLevelIntro();
+        toast("Level set to " + name + ".");
+      }).catch(function (e) { toast(e.message); });
+  }
+
+  function startPlacement() {
+    api("/api/placement/start").then(function (d) {
+      placement = { cards: d.cards, i: 0, answers: [], pool: d.pool };
+      $("level-intro").hidden = true;
+      $("level-result").hidden = true;
+      $("level-test").hidden = false;
+      $("level-title").textContent = "Placement test";
+      $("lt-input").placeholder = "meaning in " + d.know_name + "…";
+      showPlacementCard();
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  function showPlacementCard() {
+    var c = placement.cards[placement.i];
+    $("lt-pos").textContent = c.pos || "";
+    $("lt-prompt").textContent = c.prompt;
+    $("lt-pinyin").textContent = c.pinyin || "";
+    $("lt-input").value = "";
+    $("lt-input").focus();
+    $("level-sub").textContent = "Word " + (placement.i + 1) + " of " +
+      placement.cards.length;
+    $("level-fill").style.width =
+      (100 * placement.i / placement.cards.length) + "%";
+    maybeSpeak(c.speak || c.prompt);
+  }
+
+  function answerPlacement(text) {
+    var c = placement.cards[placement.i];
+    placement.answers.push({ concept_id: c.concept_id, answer: text || "" });
+    placement.i++;
+    if (placement.i >= placement.cards.length) { finishPlacement(); return; }
+    showPlacementCard();
+  }
+
+  function finishPlacement() {
+    $("level-fill").style.width = "100%";
+    api("/api/placement/finish", { method: "POST", body: { answers: placement.answers } })
+      .then(function (r) {
+        render(r.state);
+        $("level-test").hidden = true;
+        $("level-result").hidden = false;
+        $("level-title").textContent = "Placement result";
+        $("level-sub").textContent = r.right + " of " + r.asked + " correct";
+        $("lr-title").textContent = r.level.name;
+        $("lr-body").textContent =
+          "Roughly " + r.estimate + " words of " + state.session.learn_name +
+          " out of the " + r.pool + " this pair has. New decks will start at " +
+          "word " + (r.estimate + 1) + ", so you skip what you already know. " +
+          "Twenty questions can only place you to within about one band — " +
+          "set it by hand if this feels wrong.";
+
+        var bands = $("lr-bands");
+        bands.innerHTML = "";
+        r.bands.forEach(function (b) {
+          if (!b.asked) return;
+          var pct = Math.round(100 * b.right / b.asked);
+          var row = document.createElement("div");
+          row.className = "lr-band";
+          row.innerHTML =
+            '<span class="lr-band-range">' + b.from + "–" + b.to + "</span>" +
+            '<span class="lr-band-bar"><span class="lr-band-fill" style="width:' +
+              pct + '%"></span></span>' +
+            '<span class="lr-band-score">' + b.right + "/" + b.asked + "</span>";
+          bands.appendChild(row);
+        });
+
+        var acts = $("lr-actions");
+        acts.innerHTML = "";
+        var go = document.createElement("button");
+        go.className = "btn btn-primary";
+        go.textContent = "Start learning from here";
+        go.onclick = closeLevel;
+        acts.appendChild(go);
+        var again = document.createElement("button");
+        again.className = "btn btn-ghost";
+        again.textContent = "Adjust by hand";
+        again.onclick = showLevelIntro;
+        acts.appendChild(again);
+      }).catch(function (e) { toast(e.message); });
+  }
+
   // -------------------------------------------------------------- progress
   function openProgress() {
     api("/api/progress").then(function (p) {
@@ -263,7 +523,7 @@
         head.innerHTML =
           '<div class="prog-title">' + L.learn_name +
           ' <em>from ' + L.know_name + "</em></div>" +
-          '<div class="prog-count"><b>' + L.learned + "</b> / " + L.pool +
+          '<div class="prog-count"><b>' + L.vocab + "</b> / " + L.pool +
           " words · " + L.pool_pct + "%</div>";
         card.appendChild(head);
 
@@ -279,7 +539,11 @@
           "</div>" +
           '<div class="meter"><div class="meter-fill" style="width:' +
             L.level.pct + '%"></div></div>' +
-          '<p class="prog-blurb">' + L.level.blurb + "</p>";
+          '<p class="prog-blurb">' + L.level.blurb +
+            (L.placement
+              ? " · " + L.placement + " estimated at placement, " +
+                L.learned + " learned here"
+              : "") + "</p>";
         card.appendChild(lv);
 
         var badges = document.createElement("div");
@@ -305,16 +569,13 @@
   // ---------------------------------------------------------------- render
   function render(s) {
     state = s;
-    profile = s.profile;
 
-    var sel = $("profile-select");
-    sel.innerHTML = "";
-    s.profiles.forEach(function (n) {
-      var o = document.createElement("option");
-      o.value = o.textContent = n;
-      sel.appendChild(o);
-    });
-    sel.value = s.profile;
+    if (s.profile) {
+      profile = s.profile.name;
+      $("who-av").textContent = s.profile.avatar.glyph;
+      $("who-av").style.background = s.profile.avatar.colour;
+      $("who-name").textContent = s.profile.name;
+    }
 
     if (!s.session) {
       sessionId = null;
@@ -596,6 +857,17 @@
   }
 
   // -------------------------------------------------------------- wiring
+  $("btn-level").onclick = openLevel;
+  $("level-close").onclick = closeLevel;
+  $("level-start-test").onclick = startPlacement;
+  $("lt-form").onsubmit = function (e) {
+    e.preventDefault();
+    answerPlacement($("lt-input").value);
+  };
+  $("lt-skip").onclick = function () { answerPlacement(""); };
+  $("lt-speak").onclick = function () {
+    speak(primary(placement.cards[placement.i]));
+  };
   $("btn-progress").onclick = openProgress;
   $("progress-close").onclick = function () { $("progress").hidden = true; };
   $("btn-switch").onclick = function () { openPicker(!!state.session); };
@@ -610,26 +882,15 @@
     }).catch(function (e) { toast(e.message); });
   };
 
-  $("profile-select").onchange = function () {
-    profile = this.value;
-    sessionId = null;
-    api("/api/state").then(function (s) {
-      render(s);
-      renderVoiceOptions();
-      if (!s.session) openPicker(false);
-    });
-  };
-
-  $("btn-new-profile").onclick = function () {
-    var name = prompt("Name for the new profile:");
-    if (!name || !name.trim()) return;
-    api("/api/profile", { method: "POST", body: { name: name.trim(), session: null } })
-      .then(function (s) {
-        profile = s.profile;
-        sessionId = s.session ? s.session.id : null;
-        render(s);
-        if (!s.session) openPicker(false);
-      }).catch(function (e) { toast(e.message); });
+  $("btn-profile").onclick = function () { openWho(true); };
+  $("who-close").onclick = closeWho;
+  $("who-create-btn").onclick = createProfile;
+  $("who-input").oninput = validateWhoName;
+  $("who-input").onkeydown = function (e) {
+    if (e.key === "Enter" && !$("who-create-btn").disabled) {
+      e.preventDefault();
+      createProfile();
+    }
   };
 
   $("btn-reset").onclick = function () {
@@ -667,8 +928,16 @@
   };
 
   document.addEventListener("keydown", function (e) {
+    if (!$("who").hidden) {
+      if (e.key === "Escape" && state && state.profile) closeWho();
+      return;
+    }
     if (!$("progress").hidden) {
       if (e.key === "Escape") $("progress").hidden = true;
+      return;
+    }
+    if (!$("level").hidden) {
+      if (e.key === "Escape") closeLevel();
       return;
     }
     if (!$("picker").hidden) {
@@ -697,6 +966,8 @@
     if (a !== null) $("autoplay").checked = a === "1";
     var s = localStorage.getItem("leitner.session");
     if (s) sessionId = s;
+    var p = localStorage.getItem("leitner.profile");
+    if (p) profile = p;
   })();
 
   if (window.speechSynthesis) {
@@ -707,6 +978,14 @@
   api("/api/state").then(function (s) {
     render(s);
     renderVoiceOptions();
+    // The app opens by asking who is learning, then what they are resuming.
+    if (!s.profile) { openWho(false); return; }
     if (!s.session) openPicker(false);
-  }).catch(function (e) { toast("Could not load state: " + e.message); });
+  }).catch(function (e) {
+    // A stored profile name that no longer exists lands here.
+    profile = null;
+    localStorage.removeItem("leitner.profile");
+    api("/api/state").then(function (s) { render(s); openWho(false); })
+      .catch(function (e2) { toast("Could not load state: " + e2.message); });
+  });
 })();

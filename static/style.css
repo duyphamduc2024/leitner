@@ -369,3 +369,108 @@ output { font-family: var(--mono); color: var(--text); }
   font-size: 12.5px; color: var(--text-dim); padding: 0 18px 2px;
 }
 .prog-total b { color: var(--text); }
+
+/* ----------------------------------------------- level / placement test */
+.level-body {
+  padding: 16px 18px 20px; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 12px;
+}
+.level-body hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 6px 0 2px; }
+.level-body .picker-label { margin: 0; }
+.level-now {
+  width: 100%; background: var(--bg-high); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 14px 16px;
+}
+.level-now-name { font-size: 18px; font-weight: 700; }
+.level-now-sum { font-size: 12.5px; color: var(--text-dim); margin-top: 4px; }
+.level-now-sum b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.level-grid { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
+.level-btn {
+  flex: 1 1 150px; text-align: left; padding: 9px 12px; border-radius: 9px;
+  background: var(--bg-high); border: 1px solid var(--line); color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.level-btn small {
+  display: block; font-weight: 500; color: var(--text-faint);
+  font-size: 11px; margin-top: 1px; font-variant-numeric: tabular-nums;
+}
+.level-btn:hover { filter: brightness(1.15); }
+.level-btn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--bg-high)); }
+.level-btn.on small { color: var(--text-dim); }
+
+#lt-form { display: flex; gap: 8px; margin-top: 22px; }
+#lt-input { flex: 1; font-size: 17px; padding: 12px 14px; text-align: center; }
+#lt-skip { margin-top: 12px; color: var(--text-faint); border-color: transparent; }
+
+.lr-bands {
+  display: flex; flex-direction: column; gap: 3px; margin: 18px auto 0;
+  max-width: 420px; width: 100%;
+}
+.lr-band {
+  display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; color: var(--text-dim);
+}
+.lr-band-range { width: 110px; text-align: right; flex: none; }
+.lr-band-bar { flex: 1; height: 7px; border-radius: 4px; background: var(--bg-high); overflow: hidden; }
+.lr-band-fill { height: 100%; background: var(--good); border-radius: 4px; }
+.lr-band-score { width: 34px; flex: none; text-align: left; }
+
+/* -------------------------------------------------------- profiles */
+.who {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  background: var(--bg-high); border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px 14px 5px 5px; color: var(--text);
+  font: inherit; font-size: 13.5px; font-weight: 650;
+}
+.who:hover { filter: brightness(1.15); }
+.who-av {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 50%; font-size: 16px; line-height: 1;
+  background: var(--av, var(--line));
+}
+.who-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.who-body { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 20px; }
+.who-field { max-width: 320px; width: 100%; }
+.who-field input { font-size: 15px; padding: 10px 12px; }
+
+.who-list { display: flex; flex-wrap: wrap; gap: 9px; }
+.who-card {
+  display: flex; align-items: center; gap: 11px; cursor: pointer;
+  background: var(--bg-high); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 10px 16px 10px 10px; color: var(--text);
+  font: inherit; text-align: left; min-width: 190px;
+}
+.who-card:hover { filter: brightness(1.15); border-color: var(--accent); }
+.who-card-av {
+  display: grid; place-items: center; width: 42px; height: 42px;
+  border-radius: 50%; font-size: 23px; line-height: 1; flex: none;
+  background: var(--av, var(--line));
+}
+.who-card-name { display: block; font-size: 14.5px; font-weight: 650; }
+.who-card-meta { display: block; font-size: 11.5px; color: var(--text-dim); margin-top: 1px; }
+
+.av-grid {
+  display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 7px; max-width: 520px;
+}
+.av {
+  aspect-ratio: 1; display: grid; place-items: center; cursor: pointer;
+  border-radius: 50%; border: 2px solid transparent; font-size: 20px;
+  background: var(--av); padding: 0; line-height: 1;
+}
+.av:hover { filter: brightness(1.15); }
+.av.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg-raise) inset; }
+
+/* richer session rows, so you can tell what you are resuming */
+.session-btn { align-items: center; }
+.session-sub { display: block; font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.session-main { display: block; }
+.session-right .session-sub { color: var(--text-faint); }
+.session-right { text-align: right; flex: none; }
+
+@media (max-width: 620px) {
+  .av-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .who-name { max-width: 90px; }
+}

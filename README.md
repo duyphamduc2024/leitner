@@ -19,7 +19,8 @@ running — including the audio.
 | **Audio** | your OS's own speech synthesis, offline, free |
 | **Licence** | [MIT](LICENSE) for the code, [CC BY-SA 4.0](data/LICENSE) for the word data |
 
-**Contents** — [Quick start](#quick-start) · [How it works](#how-it-works) ·
+**Contents** — [Quick start](#quick-start) · [Opening the app](#opening-the-app) ·
+[How it works](#how-it-works) · [Finding your level](#finding-your-level) ·
 [Proficiency and milestones](#proficiency-and-milestones) · [Answer grading](#answer-grading) ·
 [Audio](#audio) · [The word table](#the-word-table) · [Saved state](#profiles-and-saved-state) ·
 [Project layout](#project-layout) · [Tests](#tests) · [Licence](#licence)
@@ -41,13 +42,28 @@ dictionary download on first run. Use `--port 8000` to move it off 5100.
 
 ---
 
+## Opening the app
+
+The app opens by asking **who's learning** — pick an existing profile or make one with a
+name and one of twenty pictures. Profiles keep entirely separate progress.
+
+![Choosing a profile](docs/profiles.jpg)
+
+They are **not a login.** There are no passwords, and anyone at the keyboard can open any
+profile. They exist so two people sharing a machine don't drill into each other's boxes.
+
+Next you choose **which session to resume** — each row shows the deck you reached, how many
+cards are in play, how many words you've learned and when you last touched it.
+
+![Picking up where you left off](docs/picker.jpg)
+
+---
+
 ## Learning sessions
 
 **One session drills one language.** Each keeps its own boxes, deck progress and learned
 count; they share nothing. **⇄ Switch language** in the header moves between them or starts
 another, and the header always shows the active pair.
-
-![Choosing a learning session](docs/picker.jpg)
 
 Words available per pair — a pair only uses concepts that exist in **both** its languages:
 
@@ -90,6 +106,43 @@ bar always says which condition is holding you up.
 
 **Retire this card** sits under each test verdict, for when a translation is wrong or
 useless. The card leaves that session for good; the word table isn't touched.
+
+---
+
+## Finding your level
+
+If you already know some of the language, starting at word 1 wastes weeks. **⚑ Level** offers
+two ways past that.
+
+**A 20-word placement test.** It samples across the whole frequency range — from the
+commonest words to ones most natives would hesitate on — and asks what each means.
+
+![The placement test](docs/placement.jpg)
+
+The bands line up with the level thresholds, so the questions land exactly where the answer
+changes which level you are. Each band is judged on its own sample and credited that share of
+its width, which is how a vocabulary-size test extrapolates from twenty questions. Simulated
+against learners of a known size, the estimate tracks the truth to within about one band:
+
+| Actually knows | Estimated |
+|---|---|
+| 0 | 0 |
+| 500 | 500 |
+| 2 000 | 2 000 |
+| 8 000 | 8 500 |
+
+That one-band spread is the honest limit of twenty questions, and the result screen says so
+rather than presenting a precise-looking number. Skipping is the right move when you don't
+know a word — the test is looking for where your vocabulary runs out, so guessing blurs it.
+
+**Or set it by hand.** Pick a band from Starting out through C2 and new decks are drawn from
+there.
+
+Either way, setting a level only **moves where new decks are drawn from**. It does not mark
+anything as learned: your milestones still count only words you have actually drilled, so a
+placement can never award you badges you didn't earn. The proficiency meter does include the
+placement, and the Progress panel shows the split — "2,000 estimated at placement, 150
+learned here".
 
 ---
 
@@ -256,7 +309,8 @@ Everything lives in `data/leitner.db` (SQLite): every session, which box each ca
 progress, right/wrong counts, retired cards, milestone dates, and how far into the word list
 each session has drawn. It survives reloads, restarts and switching browsers.
 
-**+ Profile** adds a second learner, with their own independent set of sessions.
+The avatar button in the header switches profile; **+ create another** is in the same panel.
+Each profile has its own independent set of sessions.
 **Reset this learning session** under Audio & settings wipes one language pair back to word 1;
 your other languages and the word table are untouched.
 
@@ -269,13 +323,13 @@ and never gets committed.
 
 | Path | What |
 |---|---|
-| `app.py` | Flask server, SQLite schema, sessions, box rules, per-language grading, levels and milestones, 11 JSON endpoints |
+| `app.py` | Flask server, SQLite schema, profiles, sessions, box rules, per-language grading, placement test, levels and milestones, 15 JSON endpoints |
 | `build_concepts.py` | Builds `data/concepts.json` from the curated core plus the four sources |
 | `data/core_concepts.tsv` | The 365 hand-written concepts — edit this to fix or add words |
 | `data/concepts.json` | 17,413 generated concepts (committed, so no build is needed) |
 | `data/leitner.db` | Your progress (created on first run, gitignored) |
-| `templates/index.html` | The UI — boxes, Learn/Test overlay, language picker, progress panel |
-| `static/app.js` | Rendering, session picker, Learn and Test flows, speech synthesis |
+| `templates/index.html` | The UI — boxes, Learn/Test overlay, profile gate, session picker, level and progress panels |
+| `static/app.js` | Rendering, profile gate, session picker, Learn/Test/placement flows, speech synthesis |
 | `static/style.css` | Hand-written, CSS variables at the top, light and dark |
 | `tests/test_rules.py` | The test suite |
 
@@ -287,6 +341,9 @@ ACTIVE_CAP = 100        # hard cap on cards in boxes 1-4
 NEW_DECK_MIN_BOX = 4    # every deck card must reach this box
 MILESTONES = (20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)
 LEVELS = (...)          # words -> CEFR band
+PLACEMENT_QUESTIONS = 20
+PLACEMENT_EDGES = (...) # frequency bands the placement test samples
+AVATARS = (...)         # the twenty profile pictures
 LANGUAGES = {...}       # code -> display name, native name, speech-synthesis tag
 ```
 
@@ -298,11 +355,12 @@ LANGUAGES = {...}       # code -> display name, native name, speech-synthesis ta
 python3 tests/test_rules.py
 ```
 
-108 checks against a throwaway database: the concept table and every language pair, grading in
+167 checks against a throwaway database: the concept table and every language pair, grading in
 all four languages (including Vietnamese tone-stripping and Mandarin pinyin), session creation
 and isolation, the Learn gate, promotion and demotion, the new-deck gate, the 100-card cap,
 the learned counter, proficiency levels, milestone unlocking and dates, the text sent to
-audio, retiring, reset, and profiles. No network, no fixtures to install.
+audio, the placement test's bands and estimator, manual level setting, deck drawing after the
+start point moves, profile creation and isolation, retiring, and reset. No network, no fixtures to install.
 
 ---
 

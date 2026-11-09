@@ -18,11 +18,13 @@
   </div>
 
   <div class="topbar-right">
-    <label class="field">
-      <span>Profile</span>
-      <select id="profile-select"></select>
-    </label>
-    <button id="btn-new-profile" class="btn btn-ghost" title="Create a new profile">+ Profile</button>
+    <button id="btn-profile" class="who" title="Switch profile">
+      <span class="who-av" id="who-av">🦊</span>
+      <span class="who-name" id="who-name">—</span>
+    </button>
+    <button id="btn-level" class="btn btn-ghost" title="Placement test and level">
+      ⚑ Level
+    </button>
     <button id="btn-progress" class="btn btn-ghost" title="Milestones and proficiency">
       ◎ Progress
     </button>
@@ -164,7 +166,7 @@
   <div class="panel panel-wide">
     <div class="panel-head">
       <div>
-        <h2>Choose a learning session</h2>
+        <h2 id="picker-title">Choose a learning session</h2>
         <p class="panel-sub">One session drills one language. Each keeps its own
           boxes and progress, and you can switch any time.</p>
       </div>
@@ -173,7 +175,7 @@
 
     <div class="picker-body">
       <div class="picker-existing" id="picker-existing" hidden>
-        <h3 class="picker-label">Carry on with</h3>
+        <h3 class="picker-label">Pick up where you left off</h3>
         <div class="session-list" id="session-list"></div>
       </div>
 
@@ -192,6 +194,98 @@
         <p class="picker-count" id="picker-count"></p>
         <button class="btn btn-primary" id="picker-start" disabled>Start learning</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- -------------------------------------------------------- profiles -->
+<div class="overlay" id="who" hidden>
+  <div class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2 id="who-title">Who's learning?</h2>
+        <p class="panel-sub" id="who-sub">
+          Pick your profile, or make a new one. Everything you learn is kept
+          per profile.
+        </p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="who-close" hidden>Close ✕</button>
+    </div>
+
+    <div class="who-body">
+      <div id="who-existing" hidden>
+        <h3 class="picker-label">Continue as</h3>
+        <div class="who-list" id="who-list"></div>
+      </div>
+
+      <div id="who-create">
+        <h3 class="picker-label" id="who-create-label">Create a profile</h3>
+        <label class="field who-field">
+          <span>Name</span>
+          <input type="text" id="who-input" maxlength="40" placeholder="your name…"
+                 autocomplete="off" autocapitalize="words" spellcheck="false">
+        </label>
+        <p class="picker-sub">Pick a picture</p>
+        <div class="av-grid" id="av-grid"></div>
+        <p class="hint" id="who-hint"></p>
+        <button class="btn btn-primary" id="who-create-btn" disabled>Create profile</button>
+      </div>
+    </div>
+    <p class="progress-foot">
+      Profiles keep separate progress on one machine. There are no passwords —
+      this is not a login, and anyone using this computer can open any profile.
+    </p>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------- level -->
+<div class="overlay" id="level" hidden>
+  <div class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2 id="level-title">Your level</h2>
+        <p class="panel-sub" id="level-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="level-close">Close ✕</button>
+    </div>
+    <div class="progress"><div class="progress-fill" id="level-fill"></div></div>
+
+    <div class="level-body" id="level-intro">
+      <div class="level-now" id="level-now"></div>
+      <button class="btn btn-primary" id="level-start-test">
+        Take the 20-word placement test
+      </button>
+      <p class="hint">
+        Twenty words sampled from the commonest to the rarest. Answer the ones you
+        know and skip the ones you don't — the test is looking for where your
+        vocabulary runs out, so guessing blurs it.
+      </p>
+      <hr>
+      <h3 class="picker-label">Or set it yourself</h3>
+      <div class="level-grid" id="level-grid"></div>
+      <p class="hint" id="level-manual-hint"></p>
+    </div>
+
+    <div class="stage" id="level-test" hidden>
+      <p class="card-pos" id="lt-pos"></p>
+      <p class="card-es" id="lt-prompt"></p>
+      <p class="card-pinyin" id="lt-pinyin"></p>
+      <button class="btn btn-speak" id="lt-speak" title="Hear it">🔊 Listen</button>
+      <form id="lt-form" autocomplete="off">
+        <input type="text" id="lt-input" placeholder="meaning…"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit" class="btn btn-primary">Next</button>
+      </form>
+      <button class="btn btn-ghost btn-sm" id="lt-skip">I don't know this one</button>
+      <p class="kbd-hint">Enter to answer · nothing is marked wrong against you here</p>
+    </div>
+
+    <div class="stage stage-done" id="level-result" hidden>
+      <p class="done-mark">⚑</p>
+      <h3 id="lr-title"></h3>
+      <p id="lr-body"></p>
+      <div class="lr-bands" id="lr-bands"></div>
+      <div class="stage-actions" id="lr-actions"></div>
     </div>
   </div>
 </div>

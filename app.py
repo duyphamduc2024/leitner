@@ -30,7 +30,7 @@ ACTIVE_CAP = 100        # hard cap on cards sitting in boxes 1-4
 NEW_DECK_MIN_BOX = 4    # every card of the current deck must reach this box
 BOXES = 6
 LEARNED_BOX = 6
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 # Words-learned milestones. The first is one deck, so there is something to
 # reach on day one; after that they roughly double.
@@ -40,6 +40,37 @@ MILESTONES = (20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)
 # estimates for how many words sit behind each level - real CEFR also covers
 # grammar, listening and speaking, so this is a vocabulary gauge and the UI
 # says as much.
+# Twenty picture choices for a profile. Emoji rather than image files: they
+# need no assets, no licensing and no network, they scale to any size, and
+# they stay sharp on every display.
+AVATARS = (
+    ("fox",       "🦊", "#e8833a"), ("panda",    "🐼", "#8e9aaf"),
+    ("penguin",   "🐧", "#4d96ff"), ("owl",      "🦉", "#a9744f"),
+    ("frog",      "🐸", "#5bbf6a"), ("turtle",   "🐢", "#3f9d7a"),
+    ("butterfly", "🦋", "#6c8cff"), ("octopus",  "🐙", "#c9568f"),
+    ("lion",      "🦁", "#e0a52b"), ("tiger",    "🐯", "#e4762c"),
+    ("koala",     "🐨", "#8a9ba8"), ("unicorn",  "🦄", "#b07ae0"),
+    ("bee",       "🐝", "#d8a81d"), ("dolphin",  "🐬", "#3aa3c9"),
+    ("eagle",     "🦅", "#7a6a55"), ("hedgehog", "🦔", "#9c7b5a"),
+    ("rabbit",    "🐰", "#d98fa8"), ("whale",    "🐳", "#3f7fc4"),
+    ("parrot",    "🦜", "#4fae5e"), ("wolf",     "🐺", "#6f7d8c"),
+)
+AVATAR_COUNT = len(AVATARS)
+
+
+def avatar_json(i):
+    i = i if 0 <= i < AVATAR_COUNT else 0
+    name, glyph, colour = AVATARS[i]
+    return {"id": i, "name": name, "glyph": glyph, "colour": colour}
+
+
+PLACEMENT_QUESTIONS = 20
+# Band boundaries for the placement test, in words. They line up with the
+# level thresholds below, so the test spends its questions exactly where the
+# answer changes which level you are: purely logarithmic bands would have put
+# six of twenty questions inside the first eighteen words.
+PLACEMENT_EDGES = (0, 50, 100, 250, 500, 1000, 2000, 4000, 7000, 10000)
+
 LEVELS = (
     (0,     "Starting out", "Nothing banked yet"),
     (100,   "Survival",     "Enough for greetings and basic needs"),
@@ -121,8 +152,59 @@ for _a in LANG_CODES:
         PAIRS[(_a, _b)] = _ids
 
 
+POOL_INDEX = {}
+
+
 def pair_pool(learn, know):
     return PAIRS.get((learn, know), [])
+
+
+def pool_index(learn, know):
+    """concept id -> its position in this pair's frequency-ordered pool."""
+    key = (learn, know)
+    if key not in POOL_INDEX:
+        POOL_INDEX[key] = {cid: i for i, cid in enumerate(pair_pool(learn, know))}
+    return POOL_INDEX[key]
+
+
+def band_edges(pool_len):
+    """Band boundaries for this pair, clipped to what the pool actually has."""
+    edges = [e for e in PLACEMENT_EDGES if e < pool_len]
+    edges.append(pool_len)
+    return edges
+
+
+def band_quotas(n_bands, total=PLACEMENT_QUESTIONS):
+    """Split the questions across the bands as evenly as the count allows."""
+    base, extra = divmod(total, n_bands)
+    # Spare questions go to the deepest bands, where the bands are widest and
+    # a single answer is extrapolated over the most words.
+    return [base + (1 if b >= n_bands - extra else 0) for b in range(n_bands)]
+
+
+def estimate_vocabulary(graded, edges):
+    """Estimate how many words of the pool are known.
+
+    graded is [(pool position, was it right)]. Each band is judged on its own
+    sample and credited that share of its width, which is the standard way a
+    vocabulary-size test extrapolates from a small number of questions.
+    """
+    total = 0.0
+    per_band = []
+    for b in range(len(edges) - 1):
+        lo, hi = edges[b], edges[b + 1]
+        sample = [ok for pos, ok in graded if lo <= pos < hi]
+        if not sample:
+            per_band.append({"band": b, "from": lo, "to": hi,
+                             "asked": 0, "right": 0, "credited": 0})
+            continue
+        share = sum(1 for ok in sample if ok) / float(len(sample))
+        credited = share * (hi - lo)
+        total += credited
+        per_band.append({"band": b, "from": lo, "to": hi, "asked": len(sample),
+                         "right": sum(1 for ok in sample if ok),
+                         "credited": int(round(credited))})
+    return int(round(total)), per_band
 
 
 # ---------------------------------------------------------------- grading
@@ -193,6 +275,7 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS profile (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL UNIQUE,
+    avatar     INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS session (
@@ -202,6 +285,8 @@ CREATE TABLE IF NOT EXISTS session (
     know_lang  TEXT NOT NULL,
     next_index INTEGER NOT NULL DEFAULT 0,
     deck_count INTEGER NOT NULL DEFAULT 0,
+    placement  INTEGER NOT NULL DEFAULT 0,
+    placed_at  TEXT,
     created_at TEXT NOT NULL,
     last_used  TEXT NOT NULL,
     UNIQUE (profile_id, learn_lang, know_lang)
@@ -247,6 +332,24 @@ def init_db():
     if "meta" in have:
         row = conn.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
         version = int(row[0]) if row else 0
+    if have and version == 3:
+        print("  migrating database to schema 4 (profile pictures)")
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(profile)").fetchall()}
+        if "avatar" not in cols:
+            conn.execute("ALTER TABLE profile ADD COLUMN avatar INTEGER NOT NULL DEFAULT 0")
+        version = SCHEMA_VERSION
+    if have and version == 2:
+        # v2 -> v3 only adds placement columns, so migrate rather than wipe.
+        print("  migrating database to schema 3 (placement)")
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(session)").fetchall()}
+        if "placement" not in cols:
+            conn.execute("ALTER TABLE session ADD COLUMN placement INTEGER NOT NULL DEFAULT 0")
+        if "placed_at" not in cols:
+            conn.execute("ALTER TABLE session ADD COLUMN placed_at TEXT")
+        pcols = {r[1] for r in conn.execute("PRAGMA table_info(profile)").fetchall()}
+        if "avatar" not in pcols:
+            conn.execute("ALTER TABLE profile ADD COLUMN avatar INTEGER NOT NULL DEFAULT 0")
+        version = SCHEMA_VERSION
     if have and version != SCHEMA_VERSION:
         # Pre-session database (single hard-coded language). Nothing in it maps
         # onto language sessions, so start clean rather than guess.
@@ -267,18 +370,30 @@ def now():
 # ----------------------------------------------------------- profile/session
 
 def get_profile(name=None):
+    """The named profile, else the only one, else None.
+
+    Deliberately does not invent a profile: the app opens by asking who you
+    are, and silently creating a "default" behind that would make the
+    greeting a lie.
+    """
     conn = db()
     if name:
-        row = conn.execute("SELECT * FROM profile WHERE name = ?", (name,)).fetchone()
-        if row:
-            return row
-    row = conn.execute("SELECT * FROM profile ORDER BY id LIMIT 1").fetchone()
-    if row:
-        return row
-    conn.execute("INSERT INTO profile (name, created_at) VALUES (?, ?)",
-                 ("default", now()))
-    conn.commit()
-    return conn.execute("SELECT * FROM profile ORDER BY id LIMIT 1").fetchone()
+        # A name that does not exist is an error, not a reason to hand back
+        # somebody else's profile.
+        return conn.execute("SELECT * FROM profile WHERE name = ?", (name,)).fetchone()
+    rows = conn.execute("SELECT * FROM profile ORDER BY id").fetchall()
+    return rows[0] if len(rows) == 1 else None
+
+
+def profile_json(row):
+    return {"name": row["name"],
+            "avatar": avatar_json(row["avatar"] if "avatar" in row.keys() else 0),
+            "created_at": (row["created_at"] or "")[:10]}
+
+
+def all_profiles():
+    return [profile_json(r) for r in
+            db().execute("SELECT * FROM profile ORDER BY id").fetchall()]
 
 
 def get_session(prof, session_id=None):
@@ -307,10 +422,15 @@ def session_learned(session_id):
 
 def session_json(row):
     learned = session_learned(row["id"])
+    placement = row["placement"] if "placement" in row.keys() else 0
+    vocab = placement + learned
     return {
         "id": row["id"],
         "learned": learned,
-        "level": level_for(learned),
+        "placement": placement,
+        "placed_at": (row["placed_at"] or "")[:10] if "placed_at" in row.keys() else "",
+        "vocab": vocab,
+        "level": level_for(vocab),
         "learn": row["learn_lang"],
         "know": row["know_lang"],
         "learn_name": LANGUAGES[row["learn_lang"]]["name"],
@@ -323,6 +443,10 @@ def session_json(row):
         "used": row["next_index"],
         "label": "%s from %s" % (LANGUAGES[row["learn_lang"]]["name"],
                                  LANGUAGES[row["know_lang"]]["name"]),
+        "last_used": row["last_used"],
+        "cards": db().execute(
+            "SELECT COUNT(*) FROM card WHERE session_id = ? AND retired = 0",
+            (row["id"],)).fetchone()[0],
     }
 
 
@@ -359,18 +483,19 @@ def card_json(row, sess, reveal=False):
 
 def build_state(prof, sess):
     conn = db()
-    sessions = [session_json(r) for r in conn.execute(
+    sessions = [] if prof is None else [session_json(r) for r in conn.execute(
         "SELECT * FROM session WHERE profile_id = ? ORDER BY last_used DESC",
         (prof["id"],)).fetchall()]
-    profiles = [r["name"] for r in
-                conn.execute("SELECT name FROM profile ORDER BY id").fetchall()]
 
     base = {
-        "profile": prof["name"],
-        "profiles": profiles,
+        "profile": profile_json(prof) if prof is not None else None,
+        "profiles": all_profiles(),
+        "avatars": [avatar_json(i) for i in range(AVATAR_COUNT)],
         "sessions": sessions,
         "languages": {k: dict(v, code=k) for k, v in LANGUAGES.items()},
         "pair_counts": {"%s|%s" % (a, b): len(ids) for (a, b), ids in PAIRS.items()},
+        "levels": [{"at": a, "name": n, "blurb": bl} for a, n, bl in LEVELS],
+        "milestones": list(MILESTONES),
         "config": {
             "deck_size": DECK_SIZE,
             "active_cap": ACTIVE_CAP,
@@ -378,7 +503,7 @@ def build_state(prof, sess):
             "boxes": BOXES,
         },
     }
-    if sess is None:
+    if prof is None or sess is None:
         base["session"] = None
         return base
 
@@ -429,8 +554,9 @@ def build_state(prof, sess):
 
     learned = session_learned(sid)
 
+    sj = session_json(sess)
     base.update({
-        "session": session_json(sess),
+        "session": sj,
         "boxes": boxes,
         "deck": {
             "number": current_deck,
@@ -439,7 +565,9 @@ def build_state(prof, sess):
             "reason": reason,
         },
         "learned": learned,
-        "level": level_for(learned),
+        "placement": sj["placement"],
+        "vocab": sj["vocab"],
+        "level": sj["level"],
         "next_milestone": next((m for m in MILESTONES if m > learned), None),
         "active_count": len(active),
         "active_cap": ACTIVE_CAP,
@@ -457,9 +585,11 @@ def body():
 
 
 def current(payload=None):
-    """(profile, session) for this request."""
+    """(profile, session) for this request. Either may be None."""
     src = payload if payload is not None else request.args
     prof = get_profile(src.get("profile"))
+    if prof is None:
+        return None, None
     sid = src.get("session")
     try:
         sid = int(sid) if sid not in (None, "") else None
@@ -494,18 +624,38 @@ def api_state():
 
 @app.route("/api/profile", methods=["POST"])
 def api_profile():
-    name = body().get("name", "").strip()
+    """Create a profile, or switch to an existing one by name."""
+    b = body()
+    name = str(b.get("name", "")).strip()
     if not name:
-        return jsonify({"error": "name required"}), 400
-    conn = db()
+        return jsonify({"error": "Give the profile a name."}), 400
+    if len(name) > 40:
+        return jsonify({"error": "That name is too long (40 characters max)."}), 400
     try:
-        conn.execute("INSERT INTO profile (name, created_at) VALUES (?, ?)",
-                     (name, now()))
+        avatar = int(b.get("avatar", 0))
+    except (TypeError, ValueError):
+        avatar = 0
+    avatar = avatar if 0 <= avatar < AVATAR_COUNT else 0
+
+    conn = db()
+    existing = conn.execute("SELECT * FROM profile WHERE name = ?", (name,)).fetchone()
+    if existing is None:
+        conn.execute("INSERT INTO profile (name, avatar, created_at) VALUES (?, ?, ?)",
+                     (name, avatar, now()))
         conn.commit()
-    except sqlite3.IntegrityError:
-        pass  # already exists - just switch to it
+    elif b.get("avatar") is not None and b.get("update_avatar"):
+        conn.execute("UPDATE profile SET avatar = ? WHERE id = ?",
+                     (avatar, existing["id"]))
+        conn.commit()
     prof = get_profile(name)
     return jsonify(build_state(prof, get_session(prof)))
+
+
+@app.route("/api/profile/exists")
+def api_profile_exists():
+    name = (request.args.get("name") or "").strip()
+    row = db().execute("SELECT id FROM profile WHERE name = ?", (name,)).fetchone()
+    return jsonify({"exists": row is not None})
 
 
 @app.route("/api/session", methods=["POST"])
@@ -513,6 +663,8 @@ def api_session():
     """Start or switch to the (learn, know) session."""
     b = body()
     prof = get_profile(b.get("profile"))
+    if prof is None:
+        return jsonify({"error": "Choose a profile first."}), 409
     learn, know = b.get("learn"), b.get("know")
     if learn not in LANGUAGES or know not in LANGUAGES:
         return jsonify({"error": "unknown language"}), 400
@@ -548,8 +700,18 @@ def api_new_deck():
 
     conn = db()
     pool = pair_pool(sess["learn_lang"], sess["know_lang"])
+    have = {r[0] for r in conn.execute(
+        "SELECT concept_id FROM card WHERE session_id = ?", (sess["id"],)).fetchall()}
+    # Walk forward from the start point, skipping anything this session has
+    # already seen. Placement and a manual level change both move the start
+    # point, possibly backwards, so a plain slice could hand out duplicates
+    # and silently produce a short deck.
     start = sess["next_index"]
-    chunk = pool[start:start + DECK_SIZE]
+    chunk, i = [], start
+    while i < len(pool) and len(chunk) < DECK_SIZE:
+        if pool[i] not in have:
+            chunk.append(pool[i])
+        i += 1
     if not chunk:
         return jsonify({"error": "no words left"}), 409
     deck_no = sess["deck_count"] + 1
@@ -557,7 +719,7 @@ def api_new_deck():
         "INSERT OR IGNORE INTO card (session_id, concept_id, box, deck) VALUES (?, ?, 1, ?)",
         [(sess["id"], cid, deck_no) for cid in chunk])
     conn.execute("UPDATE session SET next_index = ?, deck_count = ?, last_used = ?"
-                 " WHERE id = ?", (start + len(chunk), deck_no, now(), sess["id"]))
+                 " WHERE id = ?", (i, deck_no, now(), sess["id"]))
     conn.commit()
     return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
@@ -658,6 +820,8 @@ def api_answer():
 def api_progress():
     """Milestones and proficiency for every language in this profile."""
     prof, _ = current()
+    if prof is None:
+        return jsonify({"error": "no profile"}), 409
     conn = db()
     rows = conn.execute(
         "SELECT * FROM session WHERE profile_id = ? ORDER BY last_used DESC",
@@ -672,8 +836,12 @@ def api_progress():
             " ORDER BY learned_at", (r["id"],)).fetchall()]
         learned = len(dates)
         total += learned
+        placement = r["placement"] if "placement" in r.keys() else 0
         pool = len(pair_pool(r["learn_lang"], r["know_lang"]))
         langs.append({
+            "placement": placement,
+            "placed_at": (r["placed_at"] or "")[:10] if "placed_at" in r.keys() else "",
+            "vocab": placement + learned,
             "id": r["id"],
             "learn": r["learn_lang"],
             "know": r["know_lang"],
@@ -681,8 +849,8 @@ def api_progress():
             "know_name": LANGUAGES[r["know_lang"]]["name"],
             "learned": learned,
             "pool": pool,
-            "pool_pct": int(round(100.0 * learned / pool)) if pool else 0,
-            "level": level_for(learned),
+            "pool_pct": int(round(100.0 * (placement + learned) / pool)) if pool else 0,
+            "level": level_for(placement + learned),
             "milestones": [
                 {"n": m,
                  "done": learned >= m,
@@ -694,12 +862,119 @@ def api_progress():
 
     langs.sort(key=lambda x: -x["learned"])
     return jsonify({
-        "profile": prof["name"],
+        "profile": profile_json(prof),
         "total_learned": total,
         "languages": langs,
         "milestones": list(MILESTONES),
         "levels": [{"at": a, "name": n, "blurb": b} for a, n, b in LEVELS],
     })
+
+
+@app.route("/api/placement/start")
+def api_placement_start():
+    """20 words sampled across the frequency range, commonest to rarest."""
+    prof, sess = current()
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    learn, know = sess["learn_lang"], sess["know_lang"]
+    pool = pair_pool(learn, know)
+    if len(pool) < PLACEMENT_QUESTIONS:
+        return jsonify({"error": "not enough words for a placement test"}), 409
+
+    edges = band_edges(len(pool))
+    quotas = band_quotas(len(edges) - 1)
+    picks = []
+    for b in range(len(edges) - 1):
+        lo, hi = edges[b], edges[b + 1]
+        n = min(quotas[b], hi - lo)
+        for ix in sorted(random.sample(range(lo, hi), n)):
+            c = CONCEPT_BY_ID[pool[ix]]
+            picks.append({
+                "concept_id": c["id"],
+                "band": b,
+                "prompt": ", ".join(c[learn]),
+                "speak": c[learn][0] if c[learn] else "",
+                "pinyin": c.get("pinyin", "") if learn == "zh" else "",
+                "pos": c.get("pos", ""),
+            })
+    return jsonify({
+        "cards": picks,
+        "pool": len(pool),
+        "bands": len(edges) - 1,
+        "edges": edges,
+        "know_name": LANGUAGES[know]["name"],
+        "learn_name": LANGUAGES[learn]["name"],
+    })
+
+
+@app.route("/api/placement/finish", methods=["POST"])
+def api_placement_finish():
+    """Grade the sample, estimate vocabulary, and move the deck start point."""
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    learn, know = sess["learn_lang"], sess["know_lang"]
+    pool, idx = pair_pool(learn, know), pool_index(learn, know)
+    edges = band_edges(len(pool))
+
+    graded, detail = [], []
+    for item in (b.get("answers") or []):
+        try:
+            cid = int(item.get("concept_id"))
+        except (TypeError, ValueError):
+            continue
+        if cid not in idx or cid not in CONCEPT_BY_ID:
+            continue
+        concept = CONCEPT_BY_ID[cid]
+        ok = check_answer(concept, know, str(item.get("answer", "")))
+        graded.append((idx[cid], ok))
+        detail.append({"concept_id": cid, "correct": ok,
+                       "prompt": ", ".join(concept[learn]),
+                       "answer": ", ".join(concept[know])})
+    if not graded:
+        return jsonify({"error": "no answers"}), 400
+
+    estimate, per_band = estimate_vocabulary(graded, edges)
+    estimate = max(0, min(estimate, len(pool)))
+
+    conn = db()
+    conn.execute("UPDATE session SET placement = ?, placed_at = ?, next_index = ?"
+                 " WHERE id = ?", (estimate, now(), estimate, sess["id"]))
+    conn.commit()
+
+    return jsonify({
+        "estimate": estimate,
+        "pool": len(pool),
+        "right": sum(1 for _, ok in graded if ok),
+        "asked": len(graded),
+        "level": level_for(estimate + session_learned(sess["id"])),
+        "bands": per_band,
+        "detail": detail,
+        "state": build_state(prof, get_session(prof, sess["id"])),
+    })
+
+
+@app.route("/api/level", methods=["POST"])
+def api_level():
+    """Set the level by hand, or clear a placement."""
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    pool = pair_pool(sess["learn_lang"], sess["know_lang"])
+    try:
+        words = int(b.get("words"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "words required"}), 400
+    words = max(0, min(words, len(pool)))
+
+    conn = db()
+    conn.execute("UPDATE session SET placement = ?, placed_at = ?, next_index = ?"
+                 " WHERE id = ?",
+                 (words, now() if words else None, words, sess["id"]))
+    conn.commit()
+    return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
 
 @app.route("/api/retire", methods=["POST"])
@@ -726,8 +1001,8 @@ def api_reset():
     if sess is None:
         return jsonify({"error": "no session"}), 409
     db().execute("DELETE FROM card WHERE session_id = ?", (sess["id"],))
-    db().execute("UPDATE session SET next_index = 0, deck_count = 0 WHERE id = ?",
-                 (sess["id"],))
+    db().execute("UPDATE session SET next_index = 0, deck_count = 0,"
+                 " placement = 0, placed_at = NULL WHERE id = ?", (sess["id"],))
     db().commit()
     return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
