@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leitner ES — Spanish vocabulary</title>
+<title>Leitner — vocabulary trainer</title>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-mark">ES</span>
+    <span class="brand-mark" id="brand-mark">··</span>
     <div>
-      <h1>Leitner ES</h1>
-      <p class="brand-sub">Spanish vocabulary · 6-box spaced repetition</p>
+      <h1>Leitner</h1>
+      <p class="brand-sub" id="brand-sub">6-box spaced repetition</p>
     </div>
   </div>
 
@@ -23,6 +23,9 @@
       <select id="profile-select"></select>
     </label>
     <button id="btn-new-profile" class="btn btn-ghost" title="Create a new profile">+ Profile</button>
+    <button id="btn-switch" class="btn btn-primary" title="Change which language you are learning">
+      ⇄ Switch language
+    </button>
   </div>
 </header>
 
@@ -74,8 +77,9 @@
         </label>
         <p class="hint" id="voice-hint"></p>
         <hr>
-        <button id="btn-reset" class="btn btn-danger btn-sm">Reset this profile</button>
-        <p class="hint">Deletes every card and starts again from word 1. The word list itself is untouched.</p>
+        <button id="btn-reset" class="btn btn-danger btn-sm">Reset this learning session</button>
+        <p class="hint">Deletes every card in the language pair you are on and starts again
+        from word 1. Your other languages and the word list are untouched.</p>
       </div>
     </details>
   </section>
@@ -99,8 +103,10 @@
     <div class="stage" id="stage-learn" hidden>
       <p class="card-pos" id="learn-pos"></p>
       <p class="card-es" id="learn-es"></p>
+      <p class="card-pinyin" id="learn-pinyin"></p>
       <button class="btn btn-speak" id="learn-speak" title="Hear it">🔊 Listen</button>
       <p class="card-en" id="learn-en"></p>
+      <p class="card-pinyin" id="learn-answer-pinyin"></p>
       <div class="stage-actions">
         <button class="btn btn-ghost" id="learn-prev">← Back</button>
         <button class="btn btn-primary" id="learn-next">Next →</button>
@@ -112,9 +118,10 @@
     <div class="stage" id="stage-test" hidden>
       <p class="card-pos" id="test-pos"></p>
       <p class="card-es" id="test-es"></p>
+      <p class="card-pinyin" id="test-pinyin"></p>
       <button class="btn btn-speak" id="test-speak" title="Hear it">🔊 Listen</button>
       <form id="test-form" autocomplete="off">
-        <input type="text" id="test-input" placeholder="meaning in English…"
+        <input type="text" id="test-input" placeholder="meaning…"
                autocapitalize="off" autocorrect="off" spellcheck="false">
         <button type="submit" class="btn btn-primary" id="test-submit">Check</button>
       </form>
@@ -139,6 +146,43 @@
       <div class="stage-actions" id="done-actions"></div>
     </div>
 
+  </div>
+</div>
+
+<!-- --------------------------------------------------- language picker -->
+<div class="overlay" id="picker" hidden>
+  <div class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Choose a learning session</h2>
+        <p class="panel-sub">One session drills one language. Each keeps its own
+          boxes and progress, and you can switch any time.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="picker-close" hidden>Close ✕</button>
+    </div>
+
+    <div class="picker-body">
+      <div class="picker-existing" id="picker-existing" hidden>
+        <h3 class="picker-label">Carry on with</h3>
+        <div class="session-list" id="session-list"></div>
+      </div>
+
+      <div>
+        <h3 class="picker-label" id="picker-new-label">Start a new session</h3>
+        <div class="picker-grid">
+          <div>
+            <p class="picker-sub">I want to learn</p>
+            <div class="lang-row" id="learn-row"></div>
+          </div>
+          <div>
+            <p class="picker-sub">I already know</p>
+            <div class="lang-row" id="know-row"></div>
+          </div>
+        </div>
+        <p class="picker-count" id="picker-count"></p>
+        <button class="btn btn-primary" id="picker-start" disabled>Start learning</button>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -1,0 +1,369 @@
+# Hand-written core concepts, most useful first. One concept per line.
+# Columns: english | spanish | vietnamese | chinese | pinyin | pos
+# Alternatives within a column are comma separated and all count as correct.
+# Spanish nouns carry their article; Vietnamese nouns are given bare (no classifier).
+hello, hi|hola|xin chào|你好|nǐ hǎo|interj
+yes|sí|vâng, dạ, có|是|shì|adv
+no, not|no|không|不|bù|adv
+thank you, thanks|gracias|cảm ơn|谢谢|xièxie|interj
+please|por favor|làm ơn, xin|请|qǐng|phrase
+goodbye, bye|adiós|tạm biệt|再见|zàijiàn|interj
+sorry, excuse me|perdón|xin lỗi|对不起|duìbuqǐ|interj
+I|yo|tôi|我|wǒ|pron
+you|tú|bạn|你|nǐ|pron
+he, him|él|anh ấy|他|tā|pron
+she, her|ella|cô ấy|她|tā|pron
+we, us|nosotros|chúng tôi|我们|wǒmen|pron
+they, them|ellos|họ|他们|tāmen|pron
+you (formal)|usted|ông, bà|您|nín|pron
+to be|ser|là|是|shì|verb
+to be (state, location)|estar|ở|在|zài|verb
+to have|tener|có|有|yǒu|verb
+to do, to make|hacer|làm|做|zuò|verb
+to go|ir|đi|去|qù|verb
+to want|querer|muốn|要|yào|verb
+can, to be able|poder|có thể|能|néng|verb
+to say, to tell|decir|nói|说|shuō|verb
+to see|ver|thấy, nhìn|看见|kànjiàn|verb
+to give|dar|cho|给|gěi|verb
+to know (a fact)|saber|biết|知道|zhīdào|verb
+to know (a person)|conocer|quen|认识|rènshi|verb
+to come|venir|đến|来|lái|verb
+to speak, to talk|hablar|nói chuyện|说话|shuōhuà|verb
+to eat|comer|ăn|吃|chī|verb
+to drink|beber|uống|喝|hē|verb
+to live|vivir|sống|住|zhù|verb
+to work|trabajar|làm việc|工作|gōngzuò|verb
+of, from|de|của|的|de|prep
+to, at|a|đến|到|dào|prep
+in, on, at|en|trong|在|zài|prep
+with|con|với|和|hé|prep
+for, in order to|para|cho, để|为|wèi|prep
+by, through|por|bởi|由|yóu|prep
+and|y|và|和|hé|conj
+or|o|hoặc|或者|huòzhě|conj
+but|pero|nhưng|但是|dànshì|conj
+because|porque|bởi vì|因为|yīnwèi|conj
+that, which|que|mà|那|nà|conj
+what|qué|gì, cái gì|什么|shénme|pron
+who|quién|ai|谁|shéi|pron
+when|cuándo|khi nào|什么时候|shénme shíhou|adv
+where|dónde|ở đâu|哪里|nǎlǐ|adv
+how|cómo|thế nào|怎么|zěnme|adv
+how much, how many|cuánto|bao nhiêu|多少|duōshao|adv
+why|por qué|tại sao|为什么|wèishénme|adv
+very|muy|rất|很|hěn|adv
+more, most|más|hơn|更|gèng|adv
+less, fewer|menos|ít hơn|少|shǎo|adv
+a lot, much|mucho|nhiều|多|duō|adv
+little, few|poco|ít|少|shǎo|adv
+all, everything|todo|tất cả|全部|quánbù|adj
+nothing|nada|không có gì|没什么|méi shénme|pron
+something|algo|cái gì đó|某事|mǒu shì|pron
+someone|alguien|ai đó|某人|mǒu rén|pron
+nobody|nadie|không ai|没有人|méiyǒu rén|pron
+always|siempre|luôn luôn|总是|zǒngshì|adv
+never|nunca|không bao giờ|从不|cóngbù|adv
+now|ahora|bây giờ|现在|xiànzài|adv
+today|hoy|hôm nay|今天|jīntiān|adv
+yesterday|ayer|hôm qua|昨天|zuótiān|adv
+well, fine|bien|tốt, khỏe|好|hǎo|adv
+badly, poorly|mal|tệ, dở|坏|huài|adv
+also, too|también|cũng|也|yě|adv
+neither, not either|tampoco|cũng không|也不|yě bù|adv
+already|ya|rồi, đã|已经|yǐjīng|adv
+still, yet|todavía|vẫn còn|还|hái|adv
+here|aquí|ở đây|这里|zhèlǐ|adv
+there|allí|ở đó|那里|nàlǐ|adv
+my|mi|của tôi|我的|wǒ de|adj
+your|tu|của bạn|你的|nǐ de|adj
+his, her, their|su|của họ|他的|tā de|adj
+this|este|này|这个|zhège|adj
+that|ese|kia, đó|那个|nàge|adj
+other, another|otro|khác|别的|biéde|adj
+each, every|cada|mỗi|每|měi|adj
+big, large|grande|to, lớn|大|dà|adj
+small, little|pequeño|nhỏ, bé|小|xiǎo|adj
+good|bueno|tốt|好|hǎo|adj
+bad|malo|xấu|坏|huài|adj
+new|nuevo|mới|新|xīn|adj
+old|viejo|cũ, già|老|lǎo|adj
+young|joven|trẻ|年轻|niánqīng|adj
+water|el agua|nước|水|shuǐ|noun
+food, meal|la comida|thức ăn|食物|shíwù|noun
+house, home|la casa|nhà|房子|fángzi|noun
+man|el hombre|đàn ông|男人|nánrén|noun
+woman|la mujer|phụ nữ|女人|nǚrén|noun
+boy, child|el niño|cậu bé|男孩|nánhái|noun
+girl|la niña|cô bé|女孩|nǚhái|noun
+friend|el amigo|bạn|朋友|péngyou|noun
+family|la familia|gia đình|家庭|jiātíng|noun
+father|el padre|bố, cha|爸爸|bàba|noun
+mother|la madre|mẹ|妈妈|māma|noun
+son|el hijo|con trai|儿子|érzi|noun
+daughter|la hija|con gái|女儿|nǚ'ér|noun
+brother|el hermano|anh, em trai|兄弟|xiōngdì|noun
+sister|la hermana|chị, em gái|姐妹|jiěmèi|noun
+day|el día|ngày|天|tiān|noun
+night|la noche|đêm|夜|yè|noun
+morning|la mañana|buổi sáng|早上|zǎoshang|noun
+afternoon, evening|la tarde|buổi chiều|下午|xiàwǔ|noun
+year|el año|năm|年|nián|noun
+month|el mes|tháng|月|yuè|noun
+week|la semana|tuần|星期|xīngqī|noun
+hour|la hora|giờ|小时|xiǎoshí|noun
+time, weather|el tiempo|thời gian|时间|shíjiān|noun
+work, job|el trabajo|công việc|工作|gōngzuò|noun
+city|la ciudad|thành phố|城市|chéngshì|noun
+country|el país|đất nước|国家|guójiā|noun
+street|la calle|đường phố|街道|jiēdào|noun
+car|el coche|xe hơi, ô tô|汽车|qìchē|noun
+train|el tren|tàu hỏa|火车|huǒchē|noun
+airplane, plane|el avión|máy bay|飞机|fēijī|noun
+door|la puerta|cửa|门|mén|noun
+window|la ventana|cửa sổ|窗户|chuānghu|noun
+table|la mesa|bàn|桌子|zhuōzi|noun
+chair|la silla|ghế|椅子|yǐzi|noun
+bed|la cama|giường|床|chuáng|noun
+book|el libro|sách|书|shū|noun
+telephone, phone|el teléfono|điện thoại|电话|diànhuà|noun
+money|el dinero|tiền|钱|qián|noun
+shop, store|la tienda|cửa hàng|商店|shāngdiàn|noun
+market|el mercado|chợ|市场|shìchǎng|noun
+restaurant|el restaurante|nhà hàng|餐厅|cāntīng|noun
+hotel|el hotel|khách sạn|酒店|jiǔdiàn|noun
+bathroom|el baño|phòng tắm|浴室|yùshì|noun
+kitchen|la cocina|nhà bếp|厨房|chúfáng|noun
+room|el cuarto|phòng|房间|fángjiān|noun
+school|la escuela|trường học|学校|xuéxiào|noun
+doctor|el médico|bác sĩ|医生|yīshēng|noun
+hospital|el hospital|bệnh viện|医院|yīyuàn|noun
+name|el nombre|tên|名字|míngzi|noun
+life|la vida|cuộc sống|生活|shēnghuó|noun
+hand|la mano|tay|手|shǒu|noun
+head|la cabeza|đầu|头|tóu|noun
+eye|el ojo|mắt|眼睛|yǎnjing|noun
+mouth|la boca|miệng|嘴|zuǐ|noun
+foot|el pie|chân|脚|jiǎo|noun
+heart|el corazón|tim|心|xīn|noun
+bread|el pan|bánh mì|面包|miànbāo|noun
+coffee|el café|cà phê|咖啡|kāfēi|noun
+tea|el té|trà|茶|chá|noun
+milk|la leche|sữa|牛奶|niúnǎi|noun
+wine|el vino|rượu vang|葡萄酒|pútáojiǔ|noun
+beer|la cerveza|bia|啤酒|píjiǔ|noun
+meat|la carne|thịt|肉|ròu|noun
+fish (as food)|el pescado|cá|鱼|yú|noun
+fruit|la fruta|trái cây|水果|shuǐguǒ|noun
+vegetable|la verdura|rau|蔬菜|shūcài|noun
+egg|el huevo|trứng|鸡蛋|jīdàn|noun
+cheese|el queso|phô mai|奶酪|nǎilào|noun
+rice|el arroz|cơm, gạo|米饭|mǐfàn|noun
+salt|la sal|muối|盐|yán|noun
+sugar|el azúcar|đường|糖|táng|noun
+dog|el perro|chó|狗|gǒu|noun
+cat|el gato|mèo|猫|māo|noun
+to need|necesitar|cần|需要|xūyào|verb
+to like|gustar|thích|喜欢|xǐhuan|verb
+to think|pensar|nghĩ|想|xiǎng|verb
+to believe|creer|tin|相信|xiāngxìn|verb
+to feel|sentir|cảm thấy|感觉|gǎnjué|verb
+to sleep|dormir|ngủ|睡觉|shuìjiào|verb
+to wake up|despertar|thức dậy|醒|xǐng|verb
+to begin, to start|empezar|bắt đầu|开始|kāishǐ|verb
+to finish, to end|terminar|kết thúc|结束|jiéshù|verb
+to buy|comprar|mua|买|mǎi|verb
+to sell|vender|bán|卖|mài|verb
+to pay|pagar|trả tiền|付|fù|verb
+to cost|costar|giá|花费|huāfèi|verb
+to look for, to search|buscar|tìm|找|zhǎo|verb
+to find|encontrar|tìm thấy|找到|zhǎodào|verb
+to arrive|llegar|đến nơi|到达|dàodá|verb
+to leave, to go out|salir|ra ngoài|出去|chūqù|verb
+to enter, to go in|entrar|vào|进|jìn|verb
+to open|abrir|mở|开|kāi|verb
+to close, to shut|cerrar|đóng|关|guān|verb
+to put, to place|poner|đặt|放|fàng|verb
+to carry, to wear|llevar|mang|带|dài|verb
+to bring|traer|đem đến|拿来|nálái|verb
+to leave, to let|dejar|để|留|liú|verb
+to ask for, to order|pedir|xin, gọi|点|diǎn|verb
+to ask (a question)|preguntar|hỏi|问|wèn|verb
+to answer, to reply|responder|trả lời|回答|huídá|verb
+to listen|escuchar|nghe|听|tīng|verb
+to hear|oír|nghe thấy|听见|tīngjiàn|verb
+to look at, to watch|mirar|nhìn, xem|看|kàn|verb
+to read|leer|đọc|读|dú|verb
+to write|escribir|viết|写|xiě|verb
+to learn|aprender|học|学习|xuéxí|verb
+to teach, to show|enseñar|dạy|教|jiāo|verb
+to study|estudiar|học|学|xué|verb
+to understand|entender|hiểu|懂|dǒng|verb
+to remember|recordar|nhớ|记得|jìde|verb
+to forget|olvidar|quên|忘记|wàngjì|verb
+to help|ayudar|giúp|帮助|bāngzhù|verb
+to wait, to hope|esperar|đợi|等|děng|verb
+to use|usar|dùng|用|yòng|verb
+to play|jugar|chơi|玩|wán|verb
+to sing|cantar|hát|唱歌|chànggē|verb
+to dance|bailar|nhảy múa|跳舞|tiàowǔ|verb
+to run|correr|chạy|跑|pǎo|verb
+to walk|caminar|đi bộ|走|zǒu|verb
+to travel|viajar|du lịch|旅行|lǚxíng|verb
+to return, to come back|volver|trở về|回来|huílái|verb
+to stay, to remain|quedar|ở lại|留下|liúxià|verb
+to change|cambiar|thay đổi|改变|gǎibiàn|verb
+to follow, to continue|seguir|theo|跟|gēn|verb
+to stop|parar|dừng|停|tíng|verb
+to fall|caer|ngã, rơi|掉|diào|verb
+to go up, to climb|subir|lên|上|shàng|verb
+to go down, to lower|bajar|xuống|下|xià|verb
+to move|mover|di chuyển|移动|yídòng|verb
+to take|tomar|lấy|拿|ná|verb
+to be born|nacer|sinh ra|出生|chūshēng|verb
+to die|morir|chết|死|sǐ|verb
+one|uno|một|一|yī|num
+two|dos|hai|二|èr|num
+three|tres|ba|三|sān|num
+four|cuatro|bốn|四|sì|num
+five|cinco|năm|五|wǔ|num
+six|seis|sáu|六|liù|num
+seven|siete|bảy|七|qī|num
+eight|ocho|tám|八|bā|num
+nine|nueve|chín|九|jiǔ|num
+ten|diez|mười|十|shí|num
+eleven|once|mười một|十一|shíyī|num
+twelve|doce|mười hai|十二|shí'èr|num
+twenty|veinte|hai mươi|二十|èrshí|num
+thirty|treinta|ba mươi|三十|sānshí|num
+one hundred|cien|một trăm|一百|yìbǎi|num
+one thousand|mil|một nghìn|一千|yìqiān|num
+first|primero|thứ nhất|第一|dìyī|adj
+second|segundo|thứ hai|第二|dì'èr|adj
+last|último|cuối cùng|最后|zuìhòu|adj
+half|medio|một nửa|一半|yíbàn|adj
+Monday|el lunes|thứ hai|星期一|xīngqīyī|noun
+Tuesday|el martes|thứ ba|星期二|xīngqī'èr|noun
+Wednesday|el miércoles|thứ tư|星期三|xīngqīsān|noun
+Thursday|el jueves|thứ năm|星期四|xīngqīsì|noun
+Friday|el viernes|thứ sáu|星期五|xīngqīwǔ|noun
+Saturday|el sábado|thứ bảy|星期六|xīngqīliù|noun
+Sunday|el domingo|chủ nhật|星期天|xīngqītiān|noun
+January|enero|tháng một|一月|yīyuè|noun
+February|febrero|tháng hai|二月|èryuè|noun
+March|marzo|tháng ba|三月|sānyuè|noun
+April|abril|tháng tư|四月|sìyuè|noun
+May|mayo|tháng năm|五月|wǔyuè|noun
+June|junio|tháng sáu|六月|liùyuè|noun
+July|julio|tháng bảy|七月|qīyuè|noun
+August|agosto|tháng tám|八月|bāyuè|noun
+September|septiembre|tháng chín|九月|jiǔyuè|noun
+October|octubre|tháng mười|十月|shíyuè|noun
+November|noviembre|tháng mười một|十一月|shíyīyuè|noun
+December|diciembre|tháng mười hai|十二月|shí'èryuè|noun
+weekend|el fin de semana|cuối tuần|周末|zhōumò|noun
+spring|la primavera|mùa xuân|春天|chūntiān|noun
+summer|el verano|mùa hè|夏天|xiàtiān|noun
+autumn, fall|el otoño|mùa thu|秋天|qiūtiān|noun
+winter|el invierno|mùa đông|冬天|dōngtiān|noun
+sun|el sol|mặt trời|太阳|tàiyáng|noun
+moon|la luna|mặt trăng|月亮|yuèliang|noun
+sky, heaven|el cielo|bầu trời|天空|tiānkōng|noun
+rain|la lluvia|mưa|雨|yǔ|noun
+snow|la nieve|tuyết|雪|xuě|noun
+wind|el viento|gió|风|fēng|noun
+sea|el mar|biển|海|hǎi|noun
+mountain|la montaña|núi|山|shān|noun
+river|el río|sông|河|hé|noun
+tree|el árbol|cây|树|shù|noun
+flower|la flor|hoa|花|huā|noun
+beach|la playa|bãi biển|海滩|hǎitān|noun
+countryside, field|el campo|đồng quê|乡村|xiāngcūn|noun
+earth, land|la tierra|đất|土地|tǔdì|noun
+fire|el fuego|lửa|火|huǒ|noun
+air|el aire|không khí|空气|kōngqì|noun
+white|blanco|trắng|白色|báisè|adj
+black|negro|đen|黑色|hēisè|adj
+red|rojo|đỏ|红色|hóngsè|adj
+blue|azul|xanh dương|蓝色|lánsè|adj
+green|verde|xanh lá|绿色|lǜsè|adj
+yellow|amarillo|vàng|黄色|huángsè|adj
+grey, gray|gris|xám|灰色|huīsè|adj
+pink|rosa|hồng|粉色|fěnsè|adj
+brown|marrón|nâu|棕色|zōngsè|adj
+long|largo|dài|长|cháng|adj
+short (in length)|corto|ngắn|短|duǎn|adj
+tall, high|alto|cao|高|gāo|adj
+low|bajo|thấp|低|dī|adj
+fat|gordo|béo|胖|pàng|adj
+thin, slim|delgado|gầy|瘦|shòu|adj
+strong|fuerte|mạnh|强|qiáng|adj
+weak|débil|yếu|弱|ruò|adj
+fast, quick|rápido|nhanh|快|kuài|adj
+slow|lento|chậm|慢|màn|adj
+same|mismo|giống nhau|一样|yíyàng|adj
+hot|caliente|nóng|热|rè|adj
+cold|frío|lạnh|冷|lěng|adj
+easy|fácil|dễ|容易|róngyì|adj
+difficult, hard|difícil|khó|难|nán|adj
+happy|feliz|vui, hạnh phúc|高兴|gāoxìng|adj
+sad|triste|buồn|伤心|shāngxīn|adj
+tired|cansado|mệt|累|lèi|adj
+sick, ill|enfermo|ốm, bệnh|生病|shēngbìng|adj
+pretty, nice|bonito|đẹp|漂亮|piàoliang|adj
+ugly|feo|xấu xí|丑|chǒu|adj
+clean|limpio|sạch|干净|gānjìng|adj
+dirty|sucio|bẩn|脏|zāng|adj
+full|lleno|đầy|满|mǎn|adj
+empty|vacío|trống|空|kōng|adj
+expensive|caro|đắt|贵|guì|adj
+cheap|barato|rẻ|便宜|piányi|adj
+rich|rico|giàu|富|fù|adj
+poor|pobre|nghèo|穷|qióng|adj
+ready|listo|sẵn sàng|准备好|zhǔnbèi hǎo|adj
+good-looking, handsome|guapo|đẹp trai|帅|shuài|adj
+almost, nearly|casi|gần như|几乎|jīhū|adv
+only, alone|solo|chỉ, một mình|只|zhǐ|adv
+together|juntos|cùng nhau|一起|yìqǐ|adv
+soon|pronto|sớm|很快|hěn kuài|adv
+late|tarde|muộn|晚|wǎn|adv
+early|temprano|sớm|早|zǎo|adv
+before|antes|trước|以前|yǐqián|adv
+after, afterwards|después|sau|以后|yǐhòu|adv
+during|durante|trong lúc|在期间|zài qījiān|prep
+until, up to|hasta|cho đến|直到|zhídào|prep
+since, from|desde|từ|从|cóng|prep
+without|sin|không có|没有|méiyǒu|prep
+on, about|sobre|về|关于|guānyú|prep
+between, among|entre|giữa|之间|zhījiān|prep
+against|contra|chống lại|反对|fǎnduì|prep
+according to|según|theo|根据|gēnjù|prep
+although, even though|aunque|mặc dù|虽然|suīrán|conj
+while|mientras|trong khi|当时|dāngshí|conj
+then, so|entonces|vậy thì|那么|nàme|adv
+maybe, perhaps|quizás|có lẽ|也许|yěxǔ|adv
+if, whether|si|nếu|如果|rúguǒ|conj
+as, like|como|như|像|xiàng|conj
+sir, mister, gentleman|el señor|ông|先生|xiānsheng|noun
+madam, lady|la señora|bà|女士|nǚshì|noun
+miss, young lady|la señorita|cô|小姐|xiǎojiě|noun
+people|la gente|người ta|人们|rénmen|noun
+thing|la cosa|thứ, đồ|东西|dōngxi|noun
+time, occasion|la vez|lần|次|cì|noun
+truth|la verdad|sự thật|真相|zhēnxiàng|noun
+world|el mundo|thế giới|世界|shìjiè|noun
+of course|por supuesto|tất nhiên|当然|dāngrán|phrase
+agreed, all right|de acuerdo|đồng ý|同意|tóngyì|phrase
+I am sorry|lo siento|tôi xin lỗi|我很抱歉|wǒ hěn bàoqiàn|phrase
+good morning|buenos días|chào buổi sáng|早上好|zǎoshang hǎo|phrase
+good afternoon|buenas tardes|chào buổi chiều|下午好|xiàwǔ hǎo|phrase
+good night, good evening|buenas noches|chúc ngủ ngon|晚安|wǎn'ān|phrase
+how are you?|¿cómo estás?|bạn khỏe không|你好吗|nǐ hǎo ma|phrase
+my name is|me llamo|tôi tên là|我叫|wǒ jiào|phrase
+nice to meet you|mucho gusto|rất vui được gặp bạn|很高兴认识你|hěn gāoxìng rènshi nǐ|phrase
+see you later|hasta luego|hẹn gặp lại|回头见|huítóujiàn|phrase
+teacher|el maestro|giáo viên|老师|lǎoshī|noun
+student|el estudiante|học sinh|学生|xuésheng|noun
+language|el idioma|ngôn ngữ|语言|yǔyán|noun
+word|la palabra|từ|词|cí|noun
+question|la pregunta|câu hỏi|问题|wèntí|noun

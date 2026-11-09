@@ -1,7 +1,8 @@
-/* Leitner ES — front end.
+/* Leitner — front end.
  *
- * All learning state lives in SQLite behind /api/*; this file only renders it
- * and runs the two session flows (Learn walkthrough, Test round).
+ * All learning state lives in SQLite behind /api/*; this file renders it and
+ * runs the three flows: choosing a learning session, the Learn walkthrough,
+ * and a Test round.
  */
 (function () {
   "use strict";
@@ -17,22 +18,25 @@
 
   var state = null;
   var profile = null;
+  var sessionId = null;
 
   // ------------------------------------------------------------- plumbing
   function $(id) { return document.getElementById(id); }
 
   function api(path, opts) {
     opts = opts || {};
-    var url = path;
-    if (profile) {
-      url += (path.indexOf("?") < 0 ? "?" : "&") + "profile=" + encodeURIComponent(profile);
-    }
+    var url = path, q = [];
+    if (profile) q.push("profile=" + encodeURIComponent(profile));
+    if (sessionId) q.push("session=" + encodeURIComponent(sessionId));
+    if (q.length) url += (path.indexOf("?") < 0 ? "?" : "&") + q.join("&");
+
     var init = { method: opts.method || "GET", headers: {} };
     if (opts.body) {
       init.headers["Content-Type"] = "application/json";
-      var body = Object.assign({}, opts.body);
-      if (profile) body.profile = profile;
-      init.body = JSON.stringify(body);
+      var b = Object.assign({}, opts.body);
+      if (profile) b.profile = profile;
+      if (sessionId && b.session === undefined) b.session = sessionId;
+      init.body = JSON.stringify(b);
     }
     return fetch(url, init).then(function (r) {
       return r.json().then(function (data) {
@@ -48,71 +52,159 @@
     el.textContent = msg;
     el.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.hidden = true; }, 3200);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 3600);
   }
 
   // ----------------------------------------------------------------- audio
   var voices = [];
-  var chosenVoice = null;
 
-  function loadVoices() {
+  function refreshVoices() {
     if (!window.speechSynthesis) {
-      $("voice-hint").textContent =
-        "This browser has no speech synthesis, so audio is unavailable. Safari, Chrome and Edge on macOS all support it.";
+      $("voice-hint").textContent = "This browser has no speech synthesis, so audio is unavailable.";
       return;
     }
-    voices = speechSynthesis.getVoices().filter(function (v) {
-      return /^es/i.test(v.lang);
-    });
-    var sel = $("voice-select");
-    sel.innerHTML = "";
-    if (!voices.length) {
-      sel.innerHTML = "<option>No Spanish voice installed</option>";
-      $("voice-hint").textContent =
-        "macOS has no Spanish voice enabled yet. System Settings → Accessibility → " +
-        "Spoken Content → System Voice → Manage Voices, then add a Spanish one " +
-        "(Mónica, Paulina or Jorge). Reload this page afterwards.";
-      return;
-    }
-    // macOS ships a pile of novelty voices ("Eddy (Spanish (Spain))") next to
-    // the real ones (Mónica, Paulina, Jorge). The real ones have a plain name,
-    // so put those first, then es-ES before es-MX.
-    voices.sort(function (a, b) {
+    voices = speechSynthesis.getVoices();
+    renderVoiceOptions();
+  }
+
+  /* Voices for the language currently being learned. macOS ships a pile of
+     novelty voices ("Eddy (Chinese (China))") beside the real ones, so the
+     plainly-named voices go first. */
+  function voicesFor(tag) {
+    var base = (tag || "en-US").split("-")[0].toLowerCase();
+    return voices.filter(function (v) {
+      return v.lang.toLowerCase().indexOf(base) === 0;
+    }).sort(function (a, b) {
       var novelty = function (v) { return v.name.indexOf("(") >= 0 ? 1 : 0; };
-      var lang = function (v) {
-        return /es[-_]ES/i.test(v.lang) ? 0 : /es[-_]MX/i.test(v.lang) ? 1 : 2;
-      };
-      return novelty(a) - novelty(b) || lang(a) - lang(b) ||
-             a.name.localeCompare(b.name);
+      var exact = function (v) { return v.lang.toLowerCase().replace("_", "-") === tag.toLowerCase() ? 0 : 1; };
+      return novelty(a) - novelty(b) || exact(a) - exact(b) || a.name.localeCompare(b.name);
     });
-    voices.forEach(function (v, i) {
+  }
+
+  function voiceKey() {
+    return "leitner.voice." + (state && state.session ? state.session.learn : "x");
+  }
+
+  function renderVoiceOptions() {
+    var sel = $("voice-select");
+    var tag = state && state.session ? state.session.voice : "en-US";
+    var list = voicesFor(tag);
+    sel.innerHTML = "";
+    if (!list.length) {
+      sel.innerHTML = "<option>No voice installed</option>";
+      $("voice-hint").textContent =
+        "macOS has no voice for this language yet. System Settings → Accessibility → " +
+        "Spoken Content → System Voice → Manage Voices, add one, then reload. " +
+        "Everything else works without it.";
+      return;
+    }
+    list.forEach(function (v, i) {
       var o = document.createElement("option");
       o.value = String(i);
       o.textContent = v.name + "  (" + v.lang + ")";
       sel.appendChild(o);
     });
-    var saved = localStorage.getItem("leitner.voice");
+    var saved = localStorage.getItem(voiceKey());
     var idx = 0;
-    if (saved) {
-      voices.forEach(function (v, i) { if (v.name === saved) idx = i; });
-    }
+    list.forEach(function (v, i) { if (v.name === saved) idx = i; });
     sel.value = String(idx);
-    chosenVoice = voices[idx];
     $("voice-hint").textContent = "Audio is generated by your Mac — free, offline, no files.";
   }
 
+  function currentVoice() {
+    var tag = state && state.session ? state.session.voice : "en-US";
+    var list = voicesFor(tag);
+    if (!list.length) return null;
+    var i = parseInt($("voice-select").value, 10);
+    return list[isNaN(i) ? 0 : i] || list[0];
+  }
+
   function speak(text) {
-    if (!window.speechSynthesis || !chosenVoice) return;
+    if (!window.speechSynthesis || !text) return;
+    var v = currentVoice();
+    if (!v) return;
     speechSynthesis.cancel();
     var u = new SpeechSynthesisUtterance(text);
-    u.voice = chosenVoice;
-    u.lang = chosenVoice.lang;
+    u.voice = v;
+    u.lang = v.lang;
     u.rate = parseFloat($("rate").value);
     speechSynthesis.speak(u);
   }
 
-  function maybeSpeak(text) {
-    if ($("autoplay").checked) speak(text);
+  function maybeSpeak(text) { if ($("autoplay").checked) speak(text); }
+
+  // ------------------------------------------------------- language picker
+  var pick = { learn: null, know: null };
+
+  function openPicker(canClose) {
+    $("picker").hidden = false;
+    $("picker-close").hidden = !canClose;
+    pick = { learn: null, know: null };
+    renderPicker();
+  }
+
+  function closePicker() { $("picker").hidden = true; }
+
+  function renderPicker() {
+    var langs = state.languages;
+    var codes = Object.keys(langs);
+
+    // sessions you already have
+    var have = state.sessions || [];
+    $("picker-existing").hidden = have.length === 0;
+    $("picker-new-label").textContent = have.length
+      ? "Or start a new session" : "Start a new session";
+    var list = $("session-list");
+    list.innerHTML = "";
+    have.forEach(function (s) {
+      var b = document.createElement("button");
+      b.className = "session-btn" + (state.session && s.id === state.session.id ? " current" : "");
+      b.innerHTML = '<span class="session-main">' + s.learn_name +
+        ' <span style="opacity:.5">from</span> ' + s.know_name + "</span>" +
+        '<span class="session-meta">' + (s.deck ? "deck " + s.deck : "not started") +
+        " · " + s.pool + " words</span>";
+      b.onclick = function () { startSession(s.learn, s.know); };
+      list.appendChild(b);
+    });
+
+    ["learn", "know"].forEach(function (side) {
+      var row = $(side + "-row");
+      row.innerHTML = "";
+      codes.forEach(function (code) {
+        var btn = document.createElement("button");
+        btn.className = "lang-btn" + (pick[side] === code ? " on" : "");
+        btn.innerHTML = langs[code].name + " <small>" + langs[code].native + "</small>";
+        var other = side === "learn" ? pick.know : pick.learn;
+        btn.disabled = other === code;
+        btn.onclick = function () {
+          pick[side] = pick[side] === code ? null : code;
+          renderPicker();
+        };
+        row.appendChild(btn);
+      });
+    });
+
+    var n = null;
+    if (pick.learn && pick.know) {
+      n = state.pair_counts[pick.learn + "|" + pick.know] || 0;
+    }
+    $("picker-count").textContent = n === null
+      ? "Pick both languages."
+      : n + " words available for " + langs[pick.learn].name +
+        " from " + langs[pick.know].name + " — " + Math.floor(n / 20) + " decks of 20.";
+    $("picker-start").disabled = !(pick.learn && pick.know && n);
+  }
+
+  function startSession(learn, know) {
+    api("/api/session", { method: "POST", body: { learn: learn, know: know, session: null } })
+      .then(function (s) {
+        sessionId = s.session.id;
+        localStorage.setItem("leitner.session", String(sessionId));
+        render(s);
+        renderVoiceOptions();
+        closePicker();
+        toast("Learning " + s.session.learn_name + " from " + s.session.know_name + ".");
+      }).catch(function (e) { toast(e.message); });
   }
 
   // ---------------------------------------------------------------- render
@@ -128,6 +220,19 @@
       sel.appendChild(o);
     });
     sel.value = s.profile;
+
+    if (!s.session) {
+      sessionId = null;
+      $("brand-sub").textContent = "6-box spaced repetition";
+      $("brand-mark").textContent = "··";
+      return;
+    }
+    sessionId = s.session.id;
+
+    $("brand-mark").textContent = s.session.learn.toUpperCase();
+    $("brand-sub").textContent = s.session.learn_name + " from " + s.session.know_name +
+      " · 6-box spaced repetition";
+    $("test-input").placeholder = "meaning in " + s.session.know_name + "…";
 
     $("stat-learned").textContent = s.learned;
     $("stat-active").innerHTML = s.active_count + "<small>/" + s.active_cap + "</small>";
@@ -165,7 +270,6 @@
 
       var actions = document.createElement("div");
       actions.className = "box-actions";
-
       if (b.box === 1) {
         var learn = document.createElement("button");
         learn.className = "btn btn-learn";
@@ -174,7 +278,6 @@
         learn.onclick = startLearn;
         actions.appendChild(learn);
       }
-
       var test = document.createElement("button");
       test.className = "btn" + (b.box === 1 ? "" : " btn-primary");
       test.textContent = "Test";
@@ -188,15 +291,12 @@
       }
       test.onclick = function () { startTest(b.box); };
       actions.appendChild(test);
-
       div.appendChild(actions);
       wrap.appendChild(div);
     });
   }
 
-  function refresh() {
-    return api("/api/state").then(render);
-  }
+  function refresh() { return api("/api/state").then(render); }
 
   // ------------------------------------------------------------- overlay
   function openPanel(title, sub) {
@@ -216,12 +316,12 @@
     $("progress-fill").style.width = total ? (100 * done / total) + "%" : "0%";
   }
 
-  function showDone(mark, title, body, buttons) {
+  function showDone(mark, title, bodyText, buttons) {
     ["stage-learn", "stage-test"].forEach(function (id) { $(id).hidden = true; });
     $("stage-done").hidden = false;
     $("done-mark").textContent = mark;
     $("done-title").textContent = title;
-    $("done-body").textContent = body;
+    $("done-body").textContent = bodyText;
     var box = $("done-actions");
     box.innerHTML = "";
     (buttons || []).forEach(function (b) {
@@ -240,7 +340,8 @@
     api("/api/learn").then(function (data) {
       if (!data.cards.length) { toast("Box 1 is empty."); return; }
       learn = { cards: data.cards, i: 0 };
-      openPanel("Learn", "Walk through every card in box 1. The Test button unlocks at the end.");
+      openPanel("Learn · " + state.session.learn_name,
+        "Walk through every card in box 1. The Test button unlocks at the end.");
       $("stage-learn").hidden = false;
       showLearnCard();
     }).catch(function (e) { toast(e.message); });
@@ -249,14 +350,16 @@
   function showLearnCard() {
     var c = learn.cards[learn.i];
     $("learn-pos").textContent = c.pos || "";
-    $("learn-es").textContent = c.es;
-    $("learn-en").textContent = c.en.join(", ");
+    $("learn-es").textContent = c.prompt;
+    $("learn-pinyin").textContent = c.pinyin || "";
+    $("learn-en").textContent = c.answer;
+    $("learn-answer-pinyin").textContent = c.answer_pinyin || "";
     $("panel-sub").textContent = "Card " + (learn.i + 1) + " of " + learn.cards.length +
       " · deck " + c.deck;
     $("learn-prev").disabled = learn.i === 0;
     $("learn-next").textContent = learn.i === learn.cards.length - 1 ? "Finish ✓" : "Next →";
     setProgress(learn.i + 1, learn.cards.length);
-    maybeSpeak(c.es);
+    maybeSpeak(c.prompt);
   }
 
   function learnStep(delta) {
@@ -268,8 +371,8 @@
   }
 
   function finishLearn() {
-    var ids = learn.cards.map(function (c) { return c.word_id; });
-    api("/api/learn/complete", { method: "POST", body: { word_ids: ids } })
+    var ids = learn.cards.map(function (c) { return c.concept_id; });
+    api("/api/learn/complete", { method: "POST", body: { concept_ids: ids } })
       .then(function (s) {
         render(s);
         showDone("✓", "Walkthrough complete",
@@ -299,7 +402,8 @@
     var c = test.cards[test.i];
     test.awaiting = false;
     $("test-pos").textContent = c.pos || "";
-    $("test-es").textContent = c.es;
+    $("test-es").textContent = c.prompt;
+    $("test-pinyin").textContent = c.pinyin || "";
     $("verdict").hidden = true;
     $("test-form").hidden = false;
     $("test-input").value = "";
@@ -308,7 +412,7 @@
     $("panel-sub").textContent = "Card " + (test.i + 1) + " of " + test.cards.length +
       " · " + test.right + " right, " + test.wrong + " wrong";
     setProgress(test.i, test.cards.length);
-    maybeSpeak(c.es);
+    maybeSpeak(c.prompt);
   }
 
   function submitAnswer(ev) {
@@ -320,7 +424,7 @@
     test.awaiting = true;
     $("test-input").disabled = true;
 
-    api("/api/answer", { method: "POST", body: { word_id: c.word_id, answer: answer } })
+    api("/api/answer", { method: "POST", body: { concept_id: c.concept_id, answer: answer } })
       .then(function (res) {
         render(res.state);
         if (res.correct) test.right++; else test.wrong++;
@@ -329,7 +433,8 @@
         v.hidden = false;
         v.className = "verdict " + (res.correct ? "ok" : "no");
         $("verdict-line").textContent = res.correct ? "Correct" : "Not quite";
-        $("verdict-answer").textContent = res.es + " — " + res.en.join(", ");
+        $("verdict-answer").textContent = res.prompt + " — " + res.answer +
+          (res.answer_pinyin ? "  (" + res.answer_pinyin + ")" : "");
         $("verdict-move").textContent = res.correct
           ? (res.to_box === res.from_box
               ? "Stays in box " + res.to_box + " (top box)."
@@ -337,8 +442,8 @@
                 (res.learned ? "  ·  learned 🎉" : ""))
           : "Box " + res.from_box + " → box 1.";
         $("test-form").hidden = true;
-        $("panel-sub").textContent = "Card " + (test.i + 1) + " of " +
-          test.cards.length + " · " + test.right + " right, " + test.wrong + " wrong";
+        $("panel-sub").textContent = "Card " + (test.i + 1) + " of " + test.cards.length +
+          " · " + test.right + " right, " + test.wrong + " wrong";
         $("verdict-next").textContent =
           test.i === test.cards.length - 1 ? "See results →" : "Next card →";
         $("verdict-next").focus();
@@ -362,10 +467,7 @@
     var total = test.right + test.wrong;
     var buttons = [{ label: "Back to the boxes", primary: true, onClick: closePanel }];
     if (test.wrong > 0) {
-      buttons.unshift({
-        label: "Learn the missed cards",
-        onClick: startLearn
-      });
+      buttons.unshift({ label: "Learn the missed cards", onClick: startLearn });
     }
     showDone(test.wrong === 0 && total > 0 ? "🎉" : "✓",
       total === 0 ? "Round ended" : test.right + " / " + total + " correct",
@@ -380,63 +482,78 @@
 
   function retireCard() {
     var c = test.cards[test.i];
-    if (!confirm("Remove “" + c.es + "” from this profile?\n\n" +
+    if (!confirm("Remove “" + c.prompt + "” from this session?\n\n" +
                  "Use this when the translation is wrong. The card is pulled out of " +
                  "rotation for good; the word list itself is untouched.")) return;
-    api("/api/retire", { method: "POST", body: { word_id: c.word_id } })
+    api("/api/retire", { method: "POST", body: { concept_id: c.concept_id } })
       .then(function (s) {
         render(s);
         test.cards.splice(test.i, 1);
-        toast("Retired “" + c.es + "”");
-        if (!test.cards.length) { finishTest(); return; }
-        if (test.i >= test.cards.length) { finishTest(); return; }
+        toast("Retired “" + c.prompt + "”");
+        if (!test.cards.length || test.i >= test.cards.length) { finishTest(); return; }
         showTestCard();
       }).catch(function (e) { toast(e.message); });
   }
 
   // -------------------------------------------------------------- wiring
+  $("btn-switch").onclick = function () { openPicker(!!state.session); };
+  $("picker-close").onclick = closePicker;
+  $("picker-start").onclick = function () { startSession(pick.learn, pick.know); };
+
   $("btn-new-deck").onclick = function () {
     api("/api/new_deck", { method: "POST", body: {} }).then(function (s) {
       render(s);
-      toast("Deck " + s.deck.number + " loaded — 20 new words in box 1.");
+      toast("Deck " + s.deck.number + " loaded — " + s.config.deck_size +
+            " new words in box 1.");
     }).catch(function (e) { toast(e.message); });
   };
 
   $("profile-select").onchange = function () {
     profile = this.value;
-    refresh();
+    sessionId = null;
+    api("/api/state").then(function (s) {
+      render(s);
+      renderVoiceOptions();
+      if (!s.session) openPicker(false);
+    });
   };
 
   $("btn-new-profile").onclick = function () {
     var name = prompt("Name for the new profile:");
     if (!name || !name.trim()) return;
-    api("/api/profile", { method: "POST", body: { name: name.trim() } })
-      .then(function (s) { profile = s.profile; render(s); toast("Profile “" + s.profile + "” ready."); })
-      .catch(function (e) { toast(e.message); });
+    api("/api/profile", { method: "POST", body: { name: name.trim(), session: null } })
+      .then(function (s) {
+        profile = s.profile;
+        sessionId = s.session ? s.session.id : null;
+        render(s);
+        if (!s.session) openPicker(false);
+      }).catch(function (e) { toast(e.message); });
   };
 
   $("btn-reset").onclick = function () {
-    if (!confirm("Delete every card in profile “" + profile + "” and start from word 1?"))
-      return;
+    if (!state.session) return;
+    if (!confirm("Delete every card in " + state.session.learn_name + " from " +
+                 state.session.know_name + " and start from word 1?\n\n" +
+                 "Your other languages are not affected.")) return;
     api("/api/reset", { method: "POST", body: {} })
-      .then(function (s) { render(s); toast("Profile reset."); })
+      .then(function (s) { render(s); toast("Session reset."); })
       .catch(function (e) { toast(e.message); });
   };
 
   $("btn-close").onclick = closePanel;
   $("learn-next").onclick = function () { learnStep(1); };
   $("learn-prev").onclick = function () { learnStep(-1); };
-  $("learn-speak").onclick = function () { speak(learn.cards[learn.i].es); };
-  $("test-speak").onclick = function () { speak(test.cards[test.i].es); };
+  $("learn-speak").onclick = function () { speak(learn.cards[learn.i].prompt); };
+  $("test-speak").onclick = function () { speak(test.cards[test.i].prompt); };
   $("test-form").onsubmit = submitAnswer;
   $("verdict-next").onclick = nextTestCard;
   $("btn-retire").onclick = retireCard;
 
   $("voice-select").onchange = function () {
-    chosenVoice = voices[parseInt(this.value, 10)] || null;
-    if (chosenVoice) {
-      localStorage.setItem("leitner.voice", chosenVoice.name);
-      speak("Hola, vamos a aprender español");
+    var v = currentVoice();
+    if (v) {
+      localStorage.setItem(voiceKey(), v.name);
+      speak(state.session ? state.session.learn_native : "hello");
     }
   };
   $("rate").oninput = function () {
@@ -448,13 +565,16 @@
   };
 
   document.addEventListener("keydown", function (e) {
+    if (!$("picker").hidden) {
+      if (e.key === "Escape" && state && state.session) closePicker();
+      return;
+    }
     if ($("overlay").hidden) return;
     if (e.key === "Escape") { closePanel(); return; }
-
     if (!$("stage-learn").hidden) {
       if (e.key === "ArrowRight") { e.preventDefault(); learnStep(1); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); learnStep(-1); }
-      else if (e.key === " ") { e.preventDefault(); speak(learn.cards[learn.i].es); }
+      else if (e.key === " ") { e.preventDefault(); speak(learn.cards[learn.i].prompt); }
       return;
     }
     if (!$("stage-test").hidden && e.key === "Enter" && !$("verdict").hidden) {
@@ -469,14 +589,18 @@
     if (r) { $("rate").value = r; $("rate-out").textContent = r; }
     var a = localStorage.getItem("leitner.autoplay");
     if (a !== null) $("autoplay").checked = a === "1";
+    var s = localStorage.getItem("leitner.session");
+    if (s) sessionId = s;
   })();
 
   if (window.speechSynthesis) {
-    loadVoices();
-    speechSynthesis.onvoiceschanged = loadVoices;
-  } else {
-    loadVoices();
+    refreshVoices();
+    speechSynthesis.onvoiceschanged = refreshVoices;
   }
 
-  refresh().catch(function (e) { toast("Could not load state: " + e.message); });
+  api("/api/state").then(function (s) {
+    render(s);
+    renderVoiceOptions();
+    if (!s.session) openPicker(false);
+  }).catch(function (e) { toast("Could not load state: " + e.message); });
 })();

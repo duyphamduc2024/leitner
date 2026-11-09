@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Leitner ES - a 6-box spaced-repetition trainer for Spanish vocabulary.
+"""Leitner - a 6-box spaced-repetition vocabulary trainer.
 
-Flask + SQLite, single machine, no auth. State lives in data/leitner.db so a
-profile survives reloads, restarts and a switch of browser.
+Pick a language to learn and the language you already know; the pair is a
+*learning session* with its own boxes and progress. One session drills one
+language. Switch sessions freely - they do not share cards.
+
+Flask + SQLite, single machine, no auth. State lives in data/leitner.db.
 
     python3 app.py            # http://localhost:5100
     python3 app.py --port 8000
@@ -20,73 +23,145 @@ from flask import Flask, g, jsonify, render_template, request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(HERE, "data", "leitner.db")
-WORDS_PATH = os.path.join(HERE, "data", "words_es.json")
+CONCEPTS_PATH = os.path.join(HERE, "data", "concepts.json")
 
 DECK_SIZE = 20          # cards drawn per deck
 ACTIVE_CAP = 100        # hard cap on cards sitting in boxes 1-4
 NEW_DECK_MIN_BOX = 4    # every card of the current deck must reach this box
 BOXES = 6
 LEARNED_BOX = 6
+SCHEMA_VERSION = 2
+
+LANGUAGES = {
+    "en": {"name": "English",          "native": "English",    "voice": "en-US"},
+    "es": {"name": "Spanish",          "native": "Español",    "voice": "es-ES"},
+    "vi": {"name": "Vietnamese",       "native": "Tiếng Việt", "voice": "vi-VN"},
+    "zh": {"name": "Mandarin Chinese", "native": "中文",        "voice": "zh-CN"},
+}
+LANG_CODES = tuple(LANGUAGES)
 
 app = Flask(__name__)
 # local app, edited in place - never serve a stale stylesheet or script
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-# --------------------------------------------------------------- word list
+# ---------------------------------------------------------------- concepts
 
-with open(WORDS_PATH, encoding="utf-8") as fh:
-    WORDS = json.load(fh)
-WORD_BY_ID = {w["id"]: w for w in WORDS}
+with open(CONCEPTS_PATH, encoding="utf-8") as fh:
+    CONCEPTS = json.load(fh)
+CONCEPT_BY_ID = {c["id"]: c for c in CONCEPTS}
+
+# For each (learn, know) pair, the concepts that have a word in both, in
+# frequency order. This is the deck pool, and every pair has its own length.
+#
+# Two concepts can share a written form in the language being learned - 是 is
+# both "yes" and "to be", bajo is both "low" and "under" - and showing the
+# same prompt twice with two different expected answers is unanswerable. So a
+# pool keeps only the first concept for any given prompt.
+PAIRS = {}
+for _a in LANG_CODES:
+    for _b in LANG_CODES:
+        if _a == _b:
+            continue
+        _ids, _seen = [], set()
+        for _c in CONCEPTS:
+            if not (_c[_a] and _c[_b]):
+                continue
+            _key = ", ".join(_c[_a]).lower()
+            if _key in _seen:
+                continue
+            _seen.add(_key)
+            _ids.append(_c["id"])
+        PAIRS[(_a, _b)] = _ids
+
+
+def pair_pool(learn, know):
+    return PAIRS.get((learn, know), [])
+
+
+# ---------------------------------------------------------------- grading
+
+_VI_LETTERS = str.maketrans({"đ": "d", "Đ": "D"})
 
 
 def strip_accents(s):
+    s = s.translate(_VI_LETTERS)
     return "".join(c for c in unicodedata.normalize("NFD", s)
                    if unicodedata.category(c) != "Mn")
 
 
-def normalize(s):
-    """Fold an answer down to what we actually compare.
+def pinyin_key(s):
+    """'nǚ rén' / 'nu:3 ren2' / 'nuren' all reduce to the same key."""
+    return re.sub(r"[^a-z]+", "", strip_accents(s.lower()))
 
-    Case, accents, punctuation and a leading English article or infinitive
-    "to" all get thrown away, so "To Be", "be" and "ser" -> "be" all match.
-    """
-    s = strip_accents(s.lower().strip())
+
+def normalize(text, lang):
+    """Fold an answer down to what we actually compare."""
+    s = text.strip().lower()
+    if lang == "zh":
+        # Hanzi: ignore spacing and punctuation, compare the characters.
+        return re.sub(r"[\s\W_]+", "", s, flags=re.UNICODE)
+    s = strip_accents(s)
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(r"^(to|a|an|the) ", "", s)
+    if lang == "en":
+        s = re.sub(r"^(to|a|an|the) ", "", s)
+    elif lang == "es":
+        s = re.sub(r"^(el|la|los|las|un|una|unos|unas) ", "", s)
     return s
 
 
-def accepted_answers(word):
-    """Every spelling we will accept for this card."""
+def accepted_answers(concept, lang):
+    """Every spelling we will accept when `lang` is the answer side."""
     out = set()
-    for gloss in word["en"]:
-        # "to be (state, location)" -> also accept "to be"
-        bare = re.sub(r"\([^)]*\)", " ", gloss)
-        for piece in [gloss, bare] + bare.split(","):
-            n = normalize(piece)
+    for word in concept[lang]:
+        bare = re.sub(r"\([^)]*\)", " ", word)
+        for piece in [word, bare] + bare.split(","):
+            n = normalize(piece, lang)
             if n:
                 out.add(n)
-                # "to look for" -> also accept "look for" (normalize already
-                # drops a leading "to", this catches "to go out" style glosses
-                # where the user types the bare verb)
-                out.add(normalize(re.sub(r"^to ", "", piece)))
-    return {a for a in out if a}
+    return out
+
+
+def check_answer(concept, lang, answer):
+    if not answer.strip():
+        return False
+    if normalize(answer, lang) in accepted_answers(concept, lang):
+        return True
+    # Mandarin: accept pinyin too, with or without tone marks, since typing
+    # hanzi needs an IME.
+    if lang == "zh" and concept.get("pinyin"):
+        key = pinyin_key(answer)
+        if key and key == pinyin_key(concept["pinyin"]):
+            return True
+    return False
 
 
 # ----------------------------------------------------------------- database
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS profile (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL UNIQUE,
-    next_word_index INTEGER NOT NULL DEFAULT 0,
-    deck_count      INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS session (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
+    learn_lang TEXT NOT NULL,
+    know_lang  TEXT NOT NULL,
+    next_index INTEGER NOT NULL DEFAULT 0,
+    deck_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    last_used  TEXT NOT NULL,
+    UNIQUE (profile_id, learn_lang, know_lang)
 );
 CREATE TABLE IF NOT EXISTS card (
-    profile_id    INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
-    word_id       INTEGER NOT NULL,
+    session_id    INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+    concept_id    INTEGER NOT NULL,
     box           INTEGER NOT NULL DEFAULT 1,
     deck          INTEGER NOT NULL,
     seen_in_learn INTEGER NOT NULL DEFAULT 0,
@@ -94,15 +169,14 @@ CREATE TABLE IF NOT EXISTS card (
     n_correct     INTEGER NOT NULL DEFAULT 0,
     n_wrong       INTEGER NOT NULL DEFAULT 0,
     learned_at    TEXT,
-    PRIMARY KEY (profile_id, word_id)
+    PRIMARY KEY (session_id, concept_id)
 );
-CREATE INDEX IF NOT EXISTS card_box ON card(profile_id, box, retired);
+CREATE INDEX IF NOT EXISTS card_box ON card(session_id, box, retired);
 """
 
 
 def db():
     if "db" not in g:
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
@@ -117,9 +191,24 @@ def close_db(exc):
 
 
 def init_db():
+    """Create the schema, rebuilding it if an older layout is in the file."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    have = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    version = 0
+    if "meta" in have:
+        row = conn.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
+        version = int(row[0]) if row else 0
+    if have and version != SCHEMA_VERSION:
+        # Pre-session database (single hard-coded language). Nothing in it maps
+        # onto language sessions, so start clean rather than guess.
+        print("  database uses an older layout - rebuilding it")
+        for t in ("card", "session", "profile", "meta"):
+            conn.execute("DROP TABLE IF EXISTS %s" % t)
     conn.executescript(SCHEMA)
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)",
+                 (str(SCHEMA_VERSION),))
     conn.commit()
     conn.close()
 
@@ -128,8 +217,9 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# ----------------------------------------------------------- profile/session
+
 def get_profile(name=None):
-    """Return the named profile, or the first one, creating a default if empty."""
     conn = db()
     if name:
         row = conn.execute("SELECT * FROM profile WHERE name = ?", (name,)).fetchone()
@@ -144,34 +234,97 @@ def get_profile(name=None):
     return conn.execute("SELECT * FROM profile ORDER BY id LIMIT 1").fetchone()
 
 
+def get_session(prof, session_id=None):
+    """The requested session, else the most recently used one, else None."""
+    conn = db()
+    if session_id:
+        row = conn.execute("SELECT * FROM session WHERE id = ? AND profile_id = ?",
+                           (session_id, prof["id"])).fetchone()
+        if row:
+            return row
+    return conn.execute(
+        "SELECT * FROM session WHERE profile_id = ? ORDER BY last_used DESC LIMIT 1",
+        (prof["id"],)).fetchone()
+
+
+def touch_session(sess):
+    db().execute("UPDATE session SET last_used = ? WHERE id = ?", (now(), sess["id"]))
+    db().commit()
+
+
+def session_json(row):
+    return {
+        "id": row["id"],
+        "learn": row["learn_lang"],
+        "know": row["know_lang"],
+        "learn_name": LANGUAGES[row["learn_lang"]]["name"],
+        "know_name": LANGUAGES[row["know_lang"]]["name"],
+        "learn_native": LANGUAGES[row["learn_lang"]]["native"],
+        "voice": LANGUAGES[row["learn_lang"]]["voice"],
+        "answer_voice": LANGUAGES[row["know_lang"]]["voice"],
+        "deck": row["deck_count"],
+        "pool": len(pair_pool(row["learn_lang"], row["know_lang"])),
+        "used": row["next_index"],
+        "label": "%s from %s" % (LANGUAGES[row["learn_lang"]]["name"],
+                                 LANGUAGES[row["know_lang"]]["name"]),
+    }
+
+
 # -------------------------------------------------------------- state model
 
-def card_rows(pid):
+def card_rows(sid):
     return db().execute(
-        "SELECT * FROM card WHERE profile_id = ? AND retired = 0 ORDER BY deck, word_id",
-        (pid,)).fetchall()
+        "SELECT * FROM card WHERE session_id = ? AND retired = 0 ORDER BY deck, concept_id",
+        (sid,)).fetchall()
 
 
-def card_json(row, reveal=False):
-    w = WORD_BY_ID[row["word_id"]]
+def card_json(row, sess, reveal=False):
+    c = CONCEPT_BY_ID[row["concept_id"]]
+    learn, know = sess["learn_lang"], sess["know_lang"]
     out = {
-        "word_id": row["word_id"],
-        "es": w["es"],
-        "pos": w["pos"],
+        "concept_id": row["concept_id"],
+        "prompt": ", ".join(c[learn]),
+        "pinyin": c.get("pinyin", "") if learn == "zh" else "",
+        "pos": c.get("pos", ""),
         "box": row["box"],
         "deck": row["deck"],
         "n_correct": row["n_correct"],
         "n_wrong": row["n_wrong"],
     }
     if reveal:
-        out["en"] = w["en"]
+        out["answer"] = ", ".join(c[know])
+        out["answer_pinyin"] = c.get("pinyin", "") if know == "zh" else ""
     return out
 
 
-def build_state(prof):
-    pid = prof["id"]
+def build_state(prof, sess):
     conn = db()
-    rows = card_rows(pid)
+    sessions = [session_json(r) for r in conn.execute(
+        "SELECT * FROM session WHERE profile_id = ? ORDER BY last_used DESC",
+        (prof["id"],)).fetchall()]
+    profiles = [r["name"] for r in
+                conn.execute("SELECT name FROM profile ORDER BY id").fetchall()]
+
+    base = {
+        "profile": prof["name"],
+        "profiles": profiles,
+        "sessions": sessions,
+        "languages": {k: dict(v, code=k) for k, v in LANGUAGES.items()},
+        "pair_counts": {"%s|%s" % (a, b): len(ids) for (a, b), ids in PAIRS.items()},
+        "config": {
+            "deck_size": DECK_SIZE,
+            "active_cap": ACTIVE_CAP,
+            "new_deck_min_box": NEW_DECK_MIN_BOX,
+            "boxes": BOXES,
+        },
+    }
+    if sess is None:
+        base["session"] = None
+        return base
+
+    sid = sess["id"]
+    rows = card_rows(sid)
+    learn = sess["learn_lang"]
 
     boxes = []
     for b in range(1, BOXES + 1):
@@ -179,24 +332,25 @@ def build_state(prof):
         boxes.append({
             "box": b,
             "count": len(in_box),
-            "words": [WORD_BY_ID[r["word_id"]]["es"] for r in in_box],
+            "words": [", ".join(CONCEPT_BY_ID[r["concept_id"]][learn]) for r in in_box],
         })
 
-    current_deck = prof["deck_count"]
+    current_deck = sess["deck_count"]
     deck_rows = [r for r in rows if r["deck"] == current_deck]
     active = [r for r in rows if r["box"] <= NEW_DECK_MIN_BOX]
-
     unlearned_box1 = [r for r in rows if r["box"] == 1 and not r["seen_in_learn"]]
 
+    pool = pair_pool(learn, sess["know_lang"])
+    words_left = sess["next_index"] < len(pool)
     deck_ready = bool(deck_rows) and all(r["box"] >= NEW_DECK_MIN_BOX for r in deck_rows)
     room = len(active) + DECK_SIZE <= ACTIVE_CAP
-    words_left = prof["next_word_index"] < len(WORDS)
 
     if current_deck == 0:
         reason = "Load your first deck of %d words to begin." % DECK_SIZE
         can_new_deck = words_left
     elif not words_left:
-        reason = "You have reached the end of the %d-word list. Nothing left to load." % len(WORDS)
+        reason = ("You have reached the end of the %d words available for %s."
+                  % (len(pool), session_json(sess)["label"]))
         can_new_deck = False
     elif not deck_ready:
         behind = sum(1 for r in deck_rows if r["box"] < NEW_DECK_MIN_BOX)
@@ -209,25 +363,20 @@ def build_state(prof):
                   % (len(active), ACTIVE_CAP, len(active) + DECK_SIZE - ACTIVE_CAP))
         can_new_deck = False
     else:
-        reason = "Deck %d is at box %d or better. Ready for 20 more." % (
-            current_deck, NEW_DECK_MIN_BOX)
+        reason = ("Deck %d is at box %d or better. Ready for %d more."
+                  % (current_deck, NEW_DECK_MIN_BOX, DECK_SIZE))
         can_new_deck = True
 
     learned = conn.execute(
-        "SELECT COUNT(*) FROM card WHERE profile_id = ? AND learned_at IS NOT NULL",
-        (pid,)).fetchone()[0]
+        "SELECT COUNT(*) FROM card WHERE session_id = ? AND learned_at IS NOT NULL",
+        (sid,)).fetchone()[0]
 
-    profiles = [r["name"] for r in
-                conn.execute("SELECT name FROM profile ORDER BY id").fetchall()]
-
-    return {
-        "profile": prof["name"],
-        "profiles": profiles,
+    base.update({
+        "session": session_json(sess),
         "boxes": boxes,
         "deck": {
             "number": current_deck,
             "size": DECK_SIZE,
-            "cards": [card_json(r) for r in deck_rows],
             "can_new_deck": can_new_deck,
             "reason": reason,
         },
@@ -235,29 +384,34 @@ def build_state(prof):
         "active_count": len(active),
         "active_cap": ACTIVE_CAP,
         "total_cards": len(rows),
-        "words_available": len(WORDS),
-        "words_used": prof["next_word_index"],
+        "words_available": len(pool),
+        "words_used": sess["next_index"],
         "needs_learn": len(unlearned_box1),
-        "can_test_box1": len(unlearned_box1) == 0 and
-                         any(r["box"] == 1 for r in rows),
-        "config": {
-            "deck_size": DECK_SIZE,
-            "active_cap": ACTIVE_CAP,
-            "new_deck_min_box": NEW_DECK_MIN_BOX,
-            "boxes": BOXES,
-        },
-    }
+        "can_test_box1": len(unlearned_box1) == 0 and any(r["box"] == 1 for r in rows),
+    })
+    return base
+
+
+def body():
+    return request.get_json(silent=True) or {}
+
+
+def current(payload=None):
+    """(profile, session) for this request."""
+    src = payload if payload is not None else request.args
+    prof = get_profile(src.get("profile"))
+    sid = src.get("session")
+    try:
+        sid = int(sid) if sid not in (None, "") else None
+    except (TypeError, ValueError):
+        sid = None
+    return prof, get_session(prof, sid)
 
 
 # ------------------------------------------------------------------- routes
 
 @app.context_processor
 def inject_static_version():
-    """Stamp static URLs with the file mtime.
-
-    Without it a browser that cached style.css once keeps the stale copy
-    across edits and restarts, no matter what Cache-Control says.
-    """
     def static_v(name):
         try:
             stamp = int(os.path.getmtime(os.path.join(HERE, "static", name)))
@@ -274,13 +428,13 @@ def index():
 
 @app.route("/api/state")
 def api_state():
-    prof = get_profile(request.args.get("profile"))
-    return jsonify(build_state(prof))
+    prof, sess = current()
+    return jsonify(build_state(prof, sess))
 
 
 @app.route("/api/profile", methods=["POST"])
 def api_profile():
-    name = (request.json or {}).get("name", "").strip()
+    name = body().get("name", "").strip()
     if not name:
         return jsonify({"error": "name required"}), 400
     conn = db()
@@ -290,86 +444,123 @@ def api_profile():
         conn.commit()
     except sqlite3.IntegrityError:
         pass  # already exists - just switch to it
-    return jsonify(build_state(get_profile(name)))
+    prof = get_profile(name)
+    return jsonify(build_state(prof, get_session(prof)))
+
+
+@app.route("/api/session", methods=["POST"])
+def api_session():
+    """Start or switch to the (learn, know) session."""
+    b = body()
+    prof = get_profile(b.get("profile"))
+    learn, know = b.get("learn"), b.get("know")
+    if learn not in LANGUAGES or know not in LANGUAGES:
+        return jsonify({"error": "unknown language"}), 400
+    if learn == know:
+        return jsonify({"error": "Pick two different languages."}), 400
+    if not pair_pool(learn, know):
+        return jsonify({"error": "No shared vocabulary for that pair."}), 400
+
+    conn = db()
+    row = conn.execute(
+        "SELECT * FROM session WHERE profile_id = ? AND learn_lang = ? AND know_lang = ?",
+        (prof["id"], learn, know)).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO session (profile_id, learn_lang, know_lang, created_at, last_used)"
+            " VALUES (?, ?, ?, ?, ?)", (prof["id"], learn, know, now(), now()))
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM session WHERE profile_id = ? AND learn_lang = ? AND know_lang = ?",
+            (prof["id"], learn, know)).fetchone()
+    touch_session(row)
+    return jsonify(build_state(prof, get_session(prof, row["id"])))
 
 
 @app.route("/api/new_deck", methods=["POST"])
 def api_new_deck():
-    prof = get_profile((request.json or {}).get("profile"))
-    state = build_state(prof)
+    prof, sess = current(body())
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    state = build_state(prof, sess)
     if not state["deck"]["can_new_deck"]:
         return jsonify({"error": state["deck"]["reason"]}), 409
 
     conn = db()
-    start = prof["next_word_index"]
-    chunk = WORDS[start:start + DECK_SIZE]
+    pool = pair_pool(sess["learn_lang"], sess["know_lang"])
+    start = sess["next_index"]
+    chunk = pool[start:start + DECK_SIZE]
     if not chunk:
         return jsonify({"error": "no words left"}), 409
-    deck_no = prof["deck_count"] + 1
+    deck_no = sess["deck_count"] + 1
     conn.executemany(
-        "INSERT OR IGNORE INTO card (profile_id, word_id, box, deck) VALUES (?, ?, 1, ?)",
-        [(prof["id"], w["id"], deck_no) for w in chunk])
-    conn.execute("UPDATE profile SET next_word_index = ?, deck_count = ? WHERE id = ?",
-                 (start + len(chunk), deck_no, prof["id"]))
+        "INSERT OR IGNORE INTO card (session_id, concept_id, box, deck) VALUES (?, ?, 1, ?)",
+        [(sess["id"], cid, deck_no) for cid in chunk])
+    conn.execute("UPDATE session SET next_index = ?, deck_count = ?, last_used = ?"
+                 " WHERE id = ?", (start + len(chunk), deck_no, now(), sess["id"]))
     conn.commit()
-    return jsonify(build_state(get_profile(prof["name"])))
+    return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
 
 @app.route("/api/learn")
 def api_learn():
-    """Every box-1 card, with meanings - the walkthrough before a box-1 test."""
-    prof = get_profile(request.args.get("profile"))
-    rows = [r for r in card_rows(prof["id"]) if r["box"] == 1]
-    return jsonify({"cards": [card_json(r, reveal=True) for r in rows]})
+    prof, sess = current()
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    rows = [r for r in card_rows(sess["id"]) if r["box"] == 1]
+    return jsonify({"cards": [card_json(r, sess, reveal=True) for r in rows]})
 
 
 @app.route("/api/learn/complete", methods=["POST"])
 def api_learn_complete():
-    body = request.json or {}
-    prof = get_profile(body.get("profile"))
-    ids = body.get("word_ids") or []
-    conn = db()
-    conn.executemany(
-        "UPDATE card SET seen_in_learn = 1 WHERE profile_id = ? AND word_id = ?",
-        [(prof["id"], int(i)) for i in ids])
-    conn.commit()
-    return jsonify(build_state(get_profile(prof["name"])))
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    ids = b.get("concept_ids") or []
+    db().executemany(
+        "UPDATE card SET seen_in_learn = 1 WHERE session_id = ? AND concept_id = ?",
+        [(sess["id"], int(i)) for i in ids])
+    db().commit()
+    return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
 
 @app.route("/api/test/<int:box>")
 def api_test(box):
-    prof = get_profile(request.args.get("profile"))
+    prof, sess = current()
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
     if not 1 <= box <= BOXES:
         return jsonify({"error": "bad box"}), 400
-    state = build_state(prof)
+    state = build_state(prof, sess)
     if box == 1 and not state["can_test_box1"]:
         return jsonify({"error": "Run Learn first - %d new card(s) not walked through yet."
                         % state["needs_learn"]}), 409
-    rows = [r for r in card_rows(prof["id"]) if r["box"] == box]
-    cards = [card_json(r) for r in rows]
+    cards = [card_json(r, sess) for r in card_rows(sess["id"]) if r["box"] == box]
     random.shuffle(cards)
     return jsonify({"box": box, "cards": cards})
 
 
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
-    body = request.json or {}
-    prof = get_profile(body.get("profile"))
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
     try:
-        word_id = int(body["word_id"])
+        cid = int(b["concept_id"])
     except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "word_id required"}), 400
-    answer = str(body.get("answer", ""))
+        return jsonify({"error": "concept_id required"}), 400
 
     conn = db()
-    row = conn.execute(
-        "SELECT * FROM card WHERE profile_id = ? AND word_id = ?",
-        (prof["id"], word_id)).fetchone()
+    row = conn.execute("SELECT * FROM card WHERE session_id = ? AND concept_id = ?",
+                       (sess["id"], cid)).fetchone()
     if row is None:
         return jsonify({"error": "no such card"}), 404
 
-    word = WORD_BY_ID[word_id]
-    correct = normalize(answer) in accepted_answers(word) and normalize(answer) != ""
+    concept = CONCEPT_BY_ID[cid]
+    know, learn = sess["know_lang"], sess["learn_lang"]
+    correct = check_answer(concept, know, str(b.get("answer", "")))
 
     if correct:
         new_box = min(row["box"] + 1, BOXES)
@@ -377,55 +568,59 @@ def api_answer():
         if new_box >= LEARNED_BOX and learned_at is None:
             learned_at = now()
         conn.execute(
-            "UPDATE card SET box = ?, n_correct = n_correct + 1, learned_at = ? "
-            "WHERE profile_id = ? AND word_id = ?",
-            (new_box, learned_at, prof["id"], word_id))
+            "UPDATE card SET box = ?, n_correct = n_correct + 1, learned_at = ?"
+            " WHERE session_id = ? AND concept_id = ?",
+            (new_box, learned_at, sess["id"], cid))
     else:
         # Only the card that was missed drops - the rest of the box stays put.
         new_box = 1
         conn.execute(
-            "UPDATE card SET box = 1, n_wrong = n_wrong + 1 "
-            "WHERE profile_id = ? AND word_id = ?", (prof["id"], word_id))
+            "UPDATE card SET box = 1, n_wrong = n_wrong + 1"
+            " WHERE session_id = ? AND concept_id = ?", (sess["id"], cid))
     conn.commit()
 
     return jsonify({
         "correct": correct,
-        "word_id": word_id,
-        "es": word["es"],
-        "en": word["en"],
+        "concept_id": cid,
+        "prompt": ", ".join(concept[learn]),
+        "answer": ", ".join(concept[know]),
+        "answer_pinyin": concept.get("pinyin", "") if know == "zh" else "",
+        "pinyin": concept.get("pinyin", "") if learn == "zh" else "",
         "from_box": row["box"],
         "to_box": new_box,
         "learned": correct and new_box >= LEARNED_BOX,
-        "state": build_state(get_profile(prof["name"])),
+        "state": build_state(prof, get_session(prof, sess["id"])),
     })
 
 
 @app.route("/api/retire", methods=["POST"])
 def api_retire():
-    """Pull a card out of rotation - for a bad auto-generated translation."""
-    body = request.json or {}
-    prof = get_profile(body.get("profile"))
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
     try:
-        word_id = int(body["word_id"])
+        cid = int(b["concept_id"])
     except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "word_id required"}), 400
-    conn = db()
-    conn.execute("UPDATE card SET retired = 1 WHERE profile_id = ? AND word_id = ?",
-                 (prof["id"], word_id))
-    conn.commit()
-    return jsonify(build_state(get_profile(prof["name"])))
+        return jsonify({"error": "concept_id required"}), 400
+    db().execute("UPDATE card SET retired = 1 WHERE session_id = ? AND concept_id = ?",
+                 (sess["id"], cid))
+    db().commit()
+    return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
 
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
-    body = request.json or {}
-    prof = get_profile(body.get("profile"))
-    conn = db()
-    conn.execute("DELETE FROM card WHERE profile_id = ?", (prof["id"],))
-    conn.execute("UPDATE profile SET next_word_index = 0, deck_count = 0 WHERE id = ?",
-                 (prof["id"],))
-    conn.commit()
-    return jsonify(build_state(get_profile(prof["name"])))
+    """Wipe one learning session back to zero. Other sessions are untouched."""
+    b = body()
+    prof, sess = current(b)
+    if sess is None:
+        return jsonify({"error": "no session"}), 409
+    db().execute("DELETE FROM card WHERE session_id = ?", (sess["id"],))
+    db().execute("UPDATE session SET next_index = 0, deck_count = 0 WHERE id = ?",
+                 (sess["id"],))
+    db().commit()
+    return jsonify(build_state(prof, get_session(prof, sess["id"])))
 
 
 def main():
@@ -435,8 +630,10 @@ def main():
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
     init_db()
-    print("Leitner ES - %d words, %d decks of %d" %
-          (len(WORDS), len(WORDS) // DECK_SIZE, DECK_SIZE))
+    print("Leitner - %d concepts" % len(CONCEPTS))
+    for (a, b), ids in sorted(PAIRS.items()):
+        if a < b:
+            print("  %s <-> %s: %d words" % (a, b, len(ids)))
     print("http://localhost:%d" % args.port)
     app.run(host=args.host, port=args.port, debug=args.debug)
 
