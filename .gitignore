@@ -1,5 +1,6 @@
 .wordlist-cache/
 data/leitner.db
+data/leitner.db.backup-*
 __pycache__/
 *.pyc
 .DS_Store

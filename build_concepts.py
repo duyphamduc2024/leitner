@@ -43,6 +43,13 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, ".wordlist-cache")
 CORE_TSV = os.path.join(HERE, "data", "core_concepts.tsv")
+# Sense-aligned translations harvested from the English Wiktionary's
+# translation tables, where one English SENSE carries its Spanish, Vietnamese
+# and Mandarin together. Committed to the repo (300 KB) because the source it
+# came from is a 3.4 GB download that only covers ~4k English words - too thin
+# to be a primary source, but the best answer we have for the words it does
+# cover, and those are the common ones.
+SENSES_JSON = os.path.join(HERE, "data", "sense_translations.json")
 OUT = os.path.join(HERE, "data", "concepts.json")
 
 FREQ = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/%s/%s_50k.txt"
@@ -59,6 +66,93 @@ KAIKKI_VI_EN = ("https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Anh/"
                 "kaikki.org-dictionary-Ti%E1%BA%BFngAnh.jsonl")
 
 LANGS = ("en", "es", "vi", "zh")
+
+# Words we will not put on a card, whatever a dictionary says. These are
+# checked against the OUTPUT word in each language, not just the English
+# headword - an earlier version only filtered English, which is how
+# "john -> putero" reached a card.
+PROFANITY = {
+    "en": {"shit", "fuck", "fucking", "fucked", "damn", "ass", "asshole",
+           "bitch", "crap", "bullshit", "dick", "cunt", "whore", "slut",
+           "piss", "bastard", "prick", "wanker", "twat", "bollocks"},
+    "es": {"putero", "puta", "puto", "joder", "cojones", "coño", "polla",
+           "cabrón", "gilipollas", "follar", "hostia", "pendejo", "chingar",
+           "verga", "culo", "zorra", "maricón", "mierda", "cojudo", "pinche"},
+    "vi": {"đụ", "địt", "lồn", "cặc", "buồi", "đéo", "đĩ", "điếm"},
+    "zh": {"操", "肏", "屌", "妓女", "婊子", "鸡巴", "傻逼", "贱人"},
+}
+
+def _plain(text):
+    """Lowercase, accent-stripped ASCII.
+
+    Comparing on this keeps the checks immune to how a source composes its
+    Unicode accents: the same Vietnamese string can arrive precomposed or
+    decomposed, and a literal pattern only ever matches one of them.
+    """
+    t = unicodedata.normalize("NFD", text.lower()).replace("\u0111", "d")
+    return "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+
+
+# Wiktionary defines inflected forms by pointing at the base word. Those are
+# facts about English grammar rather than translations, so they make useless
+# cards: "decorations" -> "so nhieu cua decoration" (plural of decoration).
+META_PREFIXES = ("so nhieu", "thi qua khu", "phan tu", "cach viet",
+                 "loi viet", "viet tat", "so sanh hon", "cua ")
+META_TAIL = re.compile(r"\bcua\s+[a-z]{3,}\s*$")
+
+
+def is_meta_gloss(text):
+    flat = _plain(text).strip()
+    return flat.startswith(META_PREFIXES) or bool(META_TAIL.search(flat))
+
+
+# English words that are overwhelmingly people's names. Every dictionary has
+# an entry for the lowercase common noun, but teaching "john" as a word for a
+# toilet, or "paul" from whatever sense a dictionary reached for, is noise.
+# Only names with no everyday meaning of their own are listed: mark, bill,
+# will, rose, grace, frank, may and jack stay, because those are real words.
+PERSON_NAMES = set("""
+john tom henry joe bob peter paul robert david michael james charles thomas
+william richard george edward harry jim tim ted dan carl kevin brian steve
+mike chris matt andy tony gary larry jerry ron roy phil alex eric scott adam
+jason sam joseph daniel andrew brandon justin ryan jeff greg doug craig
+keith derek shawn wayne randy roger ralph eugene arthur albert
+mary susan linda nancy karen betty helen sandra donna carol ruth sharon
+michelle laura sarah kimberly deborah jessica shirley cynthia angela melissa
+brenda amy anna rebecca virginia kathleen pamela martha debra amanda
+""".split())
+
+
+# Place names leak in the same way people's names do - an English frequency
+# list built from film subtitles is full of them - and they make poor cards:
+# "rome" was producing "thành la mã". Demonyms (german, french) are left in,
+# because those are ordinary vocabulary.
+PLACE_NAMES = set("""
+rome paris london berlin madrid moscow tokyo beijing athens venice vienna
+dublin boston chicago vegas hollywood manhattan brooklyn harlem texas
+california florida ohio oregon arizona nevada utah kansas alaska hawaii
+america africa asia europe australia canada mexico brazil russia germany
+france england britain ireland scotland wales spain italy greece egypt
+china japan korea india vietnam thailand malaysia indonesia turkey poland
+hungary austria norway sweden denmark finland holland netherlands belgium
+switzerland portugal cuba chile peru colombia argentina israel iran iraq
+syria lebanon jordan kuwait yemen somalia kenya nigeria ghana ethiopia
+amazon himalayas sahara atlantis chinatown jerusalem baghdad cairo
+""".split())
+
+
+def usable_word(word, lang):
+    """A word that is fit to put on a card in this language."""
+    w = word.strip().lower()
+    if not w or len(w) > 28:
+        return False
+    if w in PROFANITY.get(lang, ()):  # also catches it as a whole gloss
+        return False
+    if lang != "zh" and any(part in PROFANITY.get(lang, ()) for part in w.split()):
+        return False
+    if lang == "vi" and is_meta_gloss(w):
+        return False
+    return True
 
 # ------------------------------------------------------------------ helpers
 
@@ -213,6 +307,10 @@ def load_chinese():
                 gloss = gloss.strip()
                 if not gloss or CEDICT_SKIP.match(gloss):
                     continue
+                # A gloss that is a single capitalised word is a proper noun -
+                # 约翰 "John", 汤姆 "Tom" - and the Chinese is a transliteration.
+                if re.fullmatch(r"[A-Z][a-z]{2,15}", gloss):
+                    continue
                 for piece in norm_gloss(gloss):
                     cur = inv[piece].get(simp)
                     if cur is None or i < cur[0]:
@@ -258,7 +356,7 @@ def load_vietnamese(vi_rank):
                         cand = re.sub(r"\s+", " ", part).strip().lower()
                         if not cand or len(cand) > 24 or cand.count(" ") > 3:
                             continue
-                        if not VI_WORD.match(cand):
+                        if not VI_WORD.match(cand) or is_meta_gloss(cand):
                             continue
                         # Reject stray non-Vietnamese tokens the dump carries
                         # ("bridge" -> "brit"). A real word is a compound, or
@@ -278,6 +376,15 @@ def load_vietnamese(vi_rank):
 
 
 # --------------------------------------------------------------------- core
+
+def load_sense_aligned():
+    """english word -> {es, vi, zh, _: sense} for the words Wiktionary's
+    translation tables cover. Empty if the file is absent."""
+    if not os.path.exists(SENSES_JSON):
+        return {}
+    with open(SENSES_JSON, encoding="utf-8") as fh:
+        return json.load(fh)
+
 
 def load_core():
     concepts = []
@@ -349,8 +456,9 @@ def main():
         es_dict = load_spanish()
         zh_inv = load_chinese()
         vi_inv = load_vietnamese(vi_rank)
-        sys.stderr.write("  es %d  zh %d  vi %d english keys\n"
-                         % (len(es_dict), len(zh_inv), len(vi_inv)))
+        aligned = load_sense_aligned()
+        sys.stderr.write("  es %d  zh %d  vi %d english keys  |  %d sense-aligned\n"
+                         % (len(es_dict), len(zh_inv), len(vi_inv), len(aligned)))
 
         # English function words, interjections and irregular inflections.
         # The curated core already teaches the ones worth knowing, and the
@@ -416,6 +524,8 @@ def main():
                 break
             if not re.fullmatch(r"[a-z]{3,}", en) or en in BAD_EN:
                 continue
+            if not usable_word(en, "en") or en in PERSON_NAMES or en in PLACE_NAMES:
+                continue
             if en in taken["en"] or inflection_of_taken(en):
                 continue
             # Vocabulary gate, to keep proper nouns ("edwards"), slang and
@@ -429,22 +539,36 @@ def main():
             row = {"en": [en], "es": [], "vi": [], "zh": [], "pinyin": "",
                    "pos": "", "src": "auto"}
 
+            # A sense-aligned entry wins: its three languages are translations
+            # of the SAME English sense, where the per-language dictionaries
+            # each pick a sense of their own and can disagree wildly.
+            fixed = aligned.get(en)
+            if fixed:
+                for lang in ("es", "vi", "zh"):
+                    w = fixed.get(lang)
+                    if w and w not in taken[lang] and usable_word(w, lang):
+                        row[lang] = [w]
+                row["src"] = "aligned"
+
             got = es_dict.get(en)
             if got:
-                for w in got[0]:
-                    if w not in taken["es"]:
-                        row["es"] = [w]
-                        row["pos"] = got[1]
-                        break
+                row["pos"] = row["pos"] or got[1]
+                if not row["es"]:
+                    for w in got[0]:
+                        if w not in taken["es"] and usable_word(w, "es"):
+                            row["es"] = [w]
+                            break
 
-            b = pick(zh_inv.get(en), zh_rank, lambda v: v[0])
-            if b and b[0] not in taken["zh"]:
-                row["zh"] = [b[0]]
-                row["pinyin"] = pinyin_marks(b[1][1])
+            if not row["zh"]:
+                b = pick(zh_inv.get(en), zh_rank, lambda v: v[0])
+                if b and b[0] not in taken["zh"] and usable_word(b[0], "zh"):
+                    row["zh"] = [b[0]]
+                    row["pinyin"] = pinyin_marks(b[1][1])
 
-            b = pick(vi_inv.get(en), vi_rank, lambda v: v)
-            if b and b[0] not in taken["vi"]:
-                row["vi"] = [b[0]]
+            if not row["vi"]:
+                b = pick(vi_inv.get(en), vi_rank, lambda v: v)
+                if b and b[0] not in taken["vi"] and usable_word(b[0], "vi"):
+                    row["vi"] = [b[0]]
 
             if not (row["es"] or row["vi"] or row["zh"]):
                 continue  # English only - no pair could use it

@@ -1,8 +1,8 @@
 Licence and attribution for the word data
 =========================================
 
-The files in this directory — concepts.json and core_concepts.tsv — are
-licensed under the
+The files in this directory — concepts.json, core_concepts.tsv and
+sense_translations.json — are licensed under the
 
     Creative Commons Attribution-ShareAlike 4.0 International Licence
     (CC BY-SA 4.0)  ·  https://creativecommons.org/licenses/by-sa/4.0/
@@ -19,6 +19,11 @@ the same licence so that the two files can be used together without confusion.
 
 Sources
 -------
+
+Sense-aligned translations (sense_translations.json) — English Wiktionary
+    https://kaikki.org/dictionary/English/ · translation tables extracted by
+    wiktextract from https://en.wiktionary.org
+    Licence: CC BY-SA 4.0 (Wiktionary text, also available under the GFDL).
 
 Spanish — FreeDict eng-spa
     https://freedict.org · derived from the English Wiktionary

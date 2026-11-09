@@ -15,7 +15,7 @@ running — including the audio.
 | | |
 |---|---|
 | **Stack** | Python 3.7+, Flask, SQLite. One dependency. No build step, no framework, vanilla JS. |
-| **Vocabulary** | 17,413 concepts; 9,185–15,009 words per language pair |
+| **Vocabulary** | 17,322 concepts; 9,288–15,116 words per language pair |
 | **Audio** | your OS's own speech synthesis, offline, free |
 | **Licence** | [MIT](LICENSE) for the code, [CC BY-SA 4.0](data/LICENSE) for the word data |
 
@@ -69,10 +69,10 @@ Words available per pair — a pair only uses concepts that exist in **both** it
 
 | | English | Spanish | Vietnamese | Mandarin |
 |---|---|---|---|---|
-| **English** | — | 15,009 | 12,489 | 12,102 |
-| **Spanish** | 15,009 | — | 10,586 | 10,213 |
-| **Vietnamese** | 12,489 | 10,586 | — | 9,185 |
-| **Mandarin** | 12,102 | 10,213 | 9,185 | — |
+| **English** | — | 15,116 | 12,489 | 12,144 |
+| **Spanish** | 15,116 | — | 10,759 | 10,408 |
+| **Vietnamese** | 12,489 | 10,759 | — | 9,288 |
+| **Mandarin** | 12,144 | 10,408 | 9,288 | — |
 
 ---
 
@@ -226,7 +226,7 @@ System Voice → Manage Voices, add one, reload. Everything else works without i
 
 ## The word table
 
-`data/concepts.json` holds **17,413 concepts**. A concept is one meaning carrying a word in
+`data/concepts.json` holds **17,322 concepts**. A concept is one meaning carrying a word in
 each language at once:
 
 ```json
@@ -249,9 +249,21 @@ without a classifier. That's 18 decks — months of study at twenty cards at a t
 | Source | Role | Licence |
 |---|---|---|
 | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) | concept ordering and word choice | MIT |
+| [English Wiktionary translation tables](https://kaikki.org/dictionary/English/) (~4k words) | **sense-aligned** translations, used first where they exist | CC BY-SA 4.0 |
 | [FreeDict `eng-spa`](https://freedict.org) (~64k headwords) | Spanish | CC BY-SA 3.0 |
 | [CC-CEDICT](https://www.mdbg.net/chinese/dictionary?page=cc-cedict) (~120k entries) | Mandarin, with pinyin | CC BY-SA 4.0 |
 | [Vietnamese Wiktionary via kaikki.org](https://kaikki.org/viwiktionary/) (~123k entries) | Vietnamese | CC BY-SA 4.0 |
+
+**Why two layers.** The per-language dictionaries each translate an English
+*word*, and each picks a sense of its own — so for a word with several meanings they can
+disagree completely. "john" once produced Spanish *putero*, Vietnamese *nhà vệ sinh* (toilet)
+and Chinese 约翰 (the name): three unrelated senses on one card. English Wiktionary's
+translation tables instead give translations of one English **sense**, with Spanish,
+Vietnamese and Mandarin together, which removes that failure entirely. They only cover about
+4,000 English words — far too few to be the primary source — but those are the common ones,
+so they are applied first and the per-language dictionaries fill in the rest. 2,494 concepts
+currently come from the sense-aligned layer, and `data/sense_translations.json` ships in the
+repo (300 KB) so no 3.4 GB download is needed to rebuild.
 
 Candidates are ranked by **reverse consistency** first — if the entry for "girl" lists `chica`
 as *its* primary translation, "girl" beats "bird" even though "bird" is the commoner English
@@ -264,6 +276,12 @@ wrong homograph, and plural/gender/accent duplicates of words already in the tab
 - **The generated tier is not hand-checked.** Accuracy is good but not perfect, and the
   further down the list you go the likelier an odd or over-literal sense. That's what
   **Retire this card** is for.
+- **Filtered out, because each was producing real nonsense:** people's names (an English
+  frequency list is full of them, and "john", "paul", "peter" were all producing cards),
+  Chinese transliterations of those names, Wiktionary's grammar notes used as a translation
+  ("decorations" → "số nhiều của decoration", *plural of decoration*), and profanity in any
+  language — the profanity check previously only looked at the English side, which is how
+  *putero* got onto a card.
 - **Vietnamese comes from the Vietnamese Wiktionary, not the English one.** Its English
   section defines 123k English headwords *in* Vietnamese — four times the size of the reverse
   direction and markedly more accurate. The English Wiktionary's Vietnamese section was tried
@@ -326,7 +344,8 @@ and never gets committed.
 | `app.py` | Flask server, SQLite schema, profiles, sessions, box rules, per-language grading, placement test, levels and milestones, 15 JSON endpoints |
 | `build_concepts.py` | Builds `data/concepts.json` from the curated core plus the four sources |
 | `data/core_concepts.tsv` | The 365 hand-written concepts — edit this to fix or add words |
-| `data/concepts.json` | 17,413 generated concepts (committed, so no build is needed) |
+| `data/concepts.json` | 17,322 generated concepts (committed, so no build is needed) |
+| `data/sense_translations.json` | sense-aligned translations for ~4k common words, applied first |
 | `data/leitner.db` | Your progress (created on first run, gitignored) |
 | `templates/index.html` | The UI — boxes, Learn/Test overlay, profile gate, session picker, level and progress panels |
 | `static/app.js` | Rendering, profile gate, session picker, Learn/Test/placement flows, speech synthesis |
