@@ -1,0 +1,5 @@
+.wordlist-cache/
+data/leitner.db
+__pycache__/
+*.pyc
+.DS_Store
