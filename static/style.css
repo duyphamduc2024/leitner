@@ -488,3 +488,8 @@ output { font-family: var(--mono); color: var(--text); }
   .av-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .who-name { max-width: 90px; }
 }
+
+/* per-box capacity */
+.box-cap { font-size: 13px; font-weight: 600; color: var(--text-faint); }
+.box-count-full { color: var(--bad); }
+.box-count-full .box-cap { color: var(--bad); opacity: .7; }

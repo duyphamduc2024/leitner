@@ -8,11 +8,11 @@
   "use strict";
 
   var BOX_NAMES = {
-    1: ["Learning box", "new and missed cards"],
+    1: ["Learning box", "new and missed cards · decks land here"],
     2: ["", "seen once"],
     3: ["", "settling in"],
-    4: ["", "last box that counts to the cap"],
-    5: ["", "frees up box 1–4 space"],
+    4: ["", "last capped box"],
+    5: ["", "no limit from here on"],
     6: ["", "learned"]
   };
 
@@ -596,14 +596,13 @@
       ? "top level"
       : s.level.to_next + " to " + s.level.next_name.split(" · ")[0];
     $("stat-meter").style.width = s.level.pct + "%";
-    $("stat-active").innerHTML = s.active_count + "<small>/" + s.active_cap + "</small>";
+    $("stat-active").textContent = s.active_count;
     $("stat-deck").textContent = s.deck.number ? "#" + s.deck.number : "—";
     $("stat-pool").innerHTML = s.words_used + "<small>/" + s.words_available + "</small>";
 
     $("deck-reason").textContent = s.deck.reason;
     $("btn-new-deck").disabled = !s.deck.can_new_deck;
-    $("btn-new-deck").textContent = "+ New Deck (" +
-      (s.deck.next_size || s.deck.size) + " words)";
+    $("btn-new-deck").textContent = "+ New Deck (" + s.deck.size + " words)";
 
     var wrap = $("boxes");
     wrap.innerHTML = "";
@@ -620,8 +619,14 @@
         (meta[0] ? ' <em>· ' + meta[0] + "</em>" : "") + "</div>" +
         '<div class="box-tag">' + meta[1] + "</div>";
       var cnt = document.createElement("div");
-      cnt.className = "box-count";
-      cnt.textContent = b.count;
+      cnt.className = "box-count" + (b.full ? " box-count-full" : "");
+      cnt.innerHTML = b.cap
+        ? b.count + '<small class="box-cap">/' + b.cap + "</small>"
+        : String(b.count);
+      if (b.cap) {
+        cnt.title = b.count + " of " + b.cap + " — boxes 1–4 hold at most " +
+          b.cap + " cards each";
+      }
       head.appendChild(left);
       head.appendChild(cnt);
       div.appendChild(head);
@@ -879,7 +884,7 @@
   $("btn-new-deck").onclick = function () {
     api("/api/new_deck", { method: "POST", body: {} }).then(function (s) {
       render(s);
-      toast("Deck " + s.deck.number + " loaded — " + s.deck.last_size +
+      toast("Deck " + s.deck.number + " loaded — " + s.deck.size +
             " new words in box 1.");
     }).catch(function (e) { toast(e.message); });
   };

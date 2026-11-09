@@ -139,7 +139,7 @@ check("both sessions listed", len(s["sessions"]) == 2, len(s["sessions"]))
 
 s = j(c.post("/api/session", json={"profile": PROF, "learn": "es", "know": "en"}))
 check("re-picking a pair reuses it", s["session"]["id"] == es_id)
-check("still two sessions", len(s["sessions"]) == 2)
+check("still two sessions", len(s["sessions"]) == 2, len(s["sessions"]))
 
 # ------------------------------------------------------------- one session
 print("\n== deck 1 lifecycle (Mandarin from Vietnamese) ==")
@@ -202,7 +202,6 @@ post("/api/answer", {"concept_id": ids[0], "answer": "nope"})
 s = j(c.get("/api/state" + S))
 check("only the missed card drops", s["boxes"][2]["count"] == 2, s["boxes"][2]["count"])
 
-print("\n== new-deck gate: the 100-card cap is the only brake ==")
 def answer_right(cid):
     post("/api/answer", {"concept_id": cid, "answer": A.CONCEPT_BY_ID[cid]["vi"][0]})
 
@@ -211,6 +210,7 @@ def cards_in(box):
     return r.get_json().get("cards", []) if r.status_code == 200 else []
 
 def promote_to(box):
+    """Answer everything below `box` correctly until nothing moves."""
     for _ in range(40):
         moved = False
         for b in range(1, box):
@@ -221,49 +221,99 @@ def promote_to(box):
             break
     return j(c.get("/api/state" + S))
 
-s = j(c.get("/api/state" + S))
-check("a fresh deck 1 does NOT block the next deck",
-      s["deck"]["can_new_deck"] is True, s["deck"]["reason"])
-check("the reason talks about the cap, not boxes",
-      "100" in s["deck"]["reason"], s["deck"]["reason"])
 
-# fill to the cap without promoting anything: cards stay in box 1
-for _ in range(4):
-    post("/api/new_deck")
-s = j(c.get("/api/state" + S))
-check("four more decks load straight away", s["active_count"] == 100, s["active_count"])
-check("nothing had to be promoted to get there",
-      s["boxes"][0]["count"] >= 95, [b["count"] for b in s["boxes"]])
-check("cap blocks a new deck", s["deck"]["can_new_deck"] is False, s["deck"]["reason"])
-check("reason points at box 5", "box 5" in s["deck"]["reason"], s["deck"]["reason"])
+print("\n== new-deck gate: a 40-card limit per box, boxes 1-4 ==")
+# its own session, so the counts are exact and the rule is readable
+cap = j(c.post("/api/session", json={"profile": PROF, "learn": "es", "know": "vi"}))
+cid_s = cap["session"]["id"]
+CS = "?profile=Duy&session=%d" % cid_s
+
+def cpost(path, b=None):
+    b = dict(b or {}); b["session"] = cid_s; b["profile"] = PROF
+    return j(c.post(path, json=b))
+
+def cbox():
+    return [b["count"] for b in j(c.get("/api/state" + CS))["boxes"]]
+
+def ccards(box):
+    r = c.get("/api/test/%d%s" % (box, CS))
+    return r.get_json()["cards"] if r.status_code == 200 else []
+
+def cright(concept_id):
+    cpost("/api/answer", {"concept_id": concept_id,
+                          "answer": A.CONCEPT_BY_ID[concept_id]["vi"][0]})
+
+st0 = j(c.get("/api/state" + CS))
+check("boxes 1-4 report their cap",
+      [b["cap"] for b in st0["boxes"]] == [40, 40, 40, 40, None, None],
+      [b["cap"] for b in st0["boxes"]])
+check("boxes 5 and 6 have no cap",
+      st0["boxes"][4]["cap"] is None and st0["boxes"][5]["cap"] is None)
+check("the only limit reported is per box",
+      st0["config"]["box_cap"] == 40 and st0["config"].get("active_cap") is None,
+      st0["config"])
+
+cpost("/api/new_deck")
+st = j(c.get("/api/state" + CS))
+check("one deck leaves room for another",
+      st["boxes"][0]["count"] == 20 and st["deck"]["can_new_deck"] is True,
+      (st["boxes"][0]["count"], st["deck"]["reason"]))
+
+cpost("/api/new_deck")
+st = j(c.get("/api/state" + CS))
+check("box 1 reaches its 40 limit", st["boxes"][0]["count"] == 40, cbox())
+check("box 1 reports itself full", st["boxes"][0]["full"] is True)
+check("a full box 1 blocks a new deck", st["deck"]["can_new_deck"] is False,
+      st["deck"]["reason"])
+check("the reason names box 1 and the limit",
+      "Box 1" in st["deck"]["reason"] and "40" in st["deck"]["reason"],
+      st["deck"]["reason"])
 check("POST new_deck refused",
-      c.post("/api/new_deck", json={"profile": PROF, "session": zh_id}).status_code == 409)
+      c.post("/api/new_deck", json={"profile": PROF, "session": cid_s}).status_code == 409)
 
-# a deck is trimmed rather than crossing the cap
-cs = j(c.get("/api/learn" + S))["cards"]
-post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
-for x in cs[:3]:
-    post("/api/retire", {"concept_id": x["concept_id"]})
-s = j(c.get("/api/state" + S))
-check("retiring three makes room for exactly three",
-      s["active_count"] == 97 and s["deck"]["next_size"] == 3,
-      (s["active_count"], s["deck"]["next_size"]))
-r = post("/api/new_deck")
-check("a partial deck is drawn", r["deck"]["last_size"] == 3, r["deck"]["last_size"])
-check("the cap is never crossed", r["active_count"] == 100, r["active_count"])
+cs = j(c.get("/api/learn" + CS))["cards"]
+cpost("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
+for card in ccards(1)[:4]:
+    cright(card["concept_id"])
+st = j(c.get("/api/state" + CS))
+check("moving four up leaves box 1 at 36", st["boxes"][0]["count"] == 36, cbox())
+check("36 + 20 would be 56, so still blocked",
+      st["deck"]["can_new_deck"] is False, st["deck"]["reason"])
+check("a deck is never part-loaded to squeeze in",
+      c.post("/api/new_deck", json={"profile": PROF, "session": cid_s}).status_code == 409)
 
-# box 1's Test is still gated on Learn, so walk the new cards through first
-cs = j(c.get("/api/learn" + S))["cards"]
-post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
-s = promote_to(5)
-check("boxes 1-4 empty once promoted", s["active_count"] == 0,
-      [b["count"] for b in s["boxes"]])
-check("new deck allowed again", s["deck"]["can_new_deck"] is True)
-check("and offers a full deck", s["deck"]["next_size"] == 20, s["deck"]["next_size"])
+for card in ccards(1)[:16]:
+    cright(card["concept_id"])
+st = j(c.get("/api/state" + CS))
+check("box 1 down to 20 unblocks it",
+      st["boxes"][0]["count"] == 20 and st["deck"]["can_new_deck"] is True,
+      (st["boxes"][0]["count"], st["deck"]["reason"]))
+check("box 2 took the cards and is not full", st["boxes"][1]["count"] == 20, cbox())
+
+cpost("/api/new_deck")
+st = j(c.get("/api/state" + CS))
+check("boxes 1-4 may hold more than 100 between them",
+      st["active_count"] == 60 and st["deck"]["can_new_deck"] is False,
+      (st["active_count"], st["deck"]["reason"]))
+check("only box 1 being full is what stops it",
+      st["boxes"][0]["count"] == 40 and all(b["count"] <= 40 for b in st["boxes"][:4]),
+      cbox())
 
 print("\n== learned counter ==")
-s = promote_to(6)
+# Drill five decks all the way to box 6. Box 1 caps at 40, so this is load,
+# clear, load again - which is the loop the cap is meant to produce.
+for _ in range(12):
+    s = j(c.get("/api/state" + S))
+    if s["learned"] >= 100:
+        break
+    if s["deck"]["can_new_deck"]:
+        post("/api/new_deck")
+        cs = j(c.get("/api/learn" + S))["cards"]
+        post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
+    s = promote_to(6)
 check("learned == 100", s["learned"] == 100, s["learned"])
+check("boxes 1-4 emptied on the way", s["active_count"] == 0,
+      [b["count"] for b in s["boxes"]])
 cid = cards_in(6)[0]["concept_id"]
 r = post("/api/answer", {"concept_id": cid, "answer": "nope"})
 check("box 6 miss -> box 1", r["to_box"] == 1)
@@ -286,7 +336,7 @@ check("level 0 is not 'top'", A.level_for(0)["top"] is False)
 
 print("\n== milestones ==")
 p = j(c.get("/api/progress?profile=Duy"))
-check("progress lists both sessions", len(p["languages"]) == 2, len(p["languages"]))
+check("progress lists every session", len(p["languages"]) == 3, len(p["languages"]))
 check("milestones start at one deck", p["milestones"][0] == 20, p["milestones"])
 check("profile total is the sum",
       p["total_learned"] == sum(L["learned"] for L in p["languages"]))
@@ -474,7 +524,7 @@ print("\n== profile isolation ==")
 s = j(c.post("/api/profile", json={"name": "second"}))
 check("new profile has no sessions", s["session"] is None and s["sessions"] == [])
 s = j(c.get("/api/state?profile=Duy&session=%d" % zh_id))
-check("original profile intact", len(s["sessions"]) == 2)
+check("original profile intact", len(s["sessions"]) == 3, len(s["sessions"]))
 check("sessions do not leak between profiles",
       j(c.get("/api/state?profile=Mai"))["sessions"] == [])
 

@@ -95,13 +95,14 @@ back from a higher box don't re-lock it — you've already seen them.
 **One wrong answer moves one card.** Missing a card in box 4 sends *that card* to box 1;
 everything else in box 4 stays put.
 
-**New Deck** loads the next 20 words whenever **boxes 1–4 hold fewer than 100 cards**. That
-cap is the only brake, and it is a hard one: five decks of 20 fill the allowance, and the only
-way to make room is to promote cards into boxes 5 and 6 — that is, to actually learn them. The
-New Deck bar always says how much room is left.
+**New Deck** loads the next 20 words, and the brake is a **40-card limit on each of boxes
+1–4**. Boxes 5 and 6 are unlimited.
 
-A deck is trimmed rather than allowed to cross the cap, so with 97 cards in play the next deck
-is three words, not twenty.
+A deck lands in box 1, so box 1 is what gates it: a deck is offered only when a whole one
+fits. With 36 cards in box 1 you are blocked, because 36 + 20 is 56. Clear box 1 by testing —
+every card you get right moves up and makes room. A deck is never part-loaded to squeeze in.
+
+That produces the loop the limit is for: load twenty, test them up, load twenty more.
 
 **Retire this card** sits under each test verdict, for when a translation is wrong or
 useless. The card leaves that session for good; the word table isn't touched.
@@ -241,7 +242,7 @@ Concepts are ordered most-common-first.
 edit: greetings, pronouns, the top verbs, function words, everyday nouns, numbers, days,
 months, colours, adjectives and common phrases, in all four languages. Spanish nouns carry
 their article (`el perro`), Mandarin carries tone-marked pinyin, Vietnamese nouns are bare
-without a classifier. That's 18 decks — months of study under the 100-card cap.
+without a classifier. That's 18 decks — months of study at twenty cards at a time.
 
 **The rest are generated** by `build_concepts.py` from four public sources:
 
@@ -336,8 +337,8 @@ Settings worth knowing, at the top of `app.py`:
 
 ```python
 DECK_SIZE = 20          # cards drawn per deck
-ACTIVE_CAP = 100        # hard cap on cards in boxes 1-4
-ACTIVE_MAX_BOX = 4      # boxes 1..4 count towards that cap
+BOX_CAP = 40            # max cards in any one of boxes 1-4
+ACTIVE_MAX_BOX = 4      # boxes 1..4 are capped; 5 and 6 are unlimited
 MILESTONES = (20, 50, 100, 200, 500, 1000, 2000, 5000, 10000)
 LEVELS = (...)          # words -> CEFR band
 PLACEMENT_QUESTIONS = 20
@@ -354,10 +355,10 @@ LANGUAGES = {...}       # code -> display name, native name, speech-synthesis ta
 python3 tests/test_rules.py
 ```
 
-171 checks against a throwaway database: the concept table and every language pair, grading in
+175 checks against a throwaway database: the concept table and every language pair, grading in
 all four languages (including Vietnamese tone-stripping and Mandarin pinyin), session creation
-and isolation, the Learn gate, promotion and demotion, the new-deck gate, the 100-card cap,
-the learned counter, proficiency levels, milestone unlocking and dates, the text sent to
+and isolation, the Learn gate, promotion and demotion, the new-deck gate, the per-box limit,
+the learned counter, the per-box limit, proficiency levels, milestone unlocking and dates, the text sent to
 audio, the placement test's bands and estimator, manual level setting, deck drawing after the
 start point moves, profile creation and isolation, retiring, and reset. No network, no fixtures to install.
 
