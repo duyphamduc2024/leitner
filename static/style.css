@@ -431,7 +431,18 @@ output { font-family: var(--mono); color: var(--text); }
 }
 .who-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.who-body { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 20px; }
+.who-body { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 24px; }
+/* The children of each block need their own spacing: the body's gap only
+   separates the two blocks, which left "Create profile" flush against the
+   picture grid. */
+#who-existing, #who-create {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+}
+#who-create .picker-label, #who-create .picker-sub { margin: 0; }
+#who-create .av-grid { margin: 2px 0 4px; }
+#who-create-btn { margin-top: 4px; }
+/* an empty validation line should not reserve space */
+#who-hint:empty { display: none; }
 .who-field { max-width: 320px; width: 100%; }
 .who-field input { font-size: 15px; padding: 10px 12px; }
 
@@ -454,6 +465,9 @@ output { font-family: var(--mono); color: var(--text); }
 .av-grid {
   display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 7px; max-width: 520px;
+  /* the column is align-items:flex-start, so without this the grid
+     collapses to min-content and the pictures shrink */
+  width: 100%;
 }
 .av {
   aspect-ratio: 1; display: grid; place-items: center; cursor: pointer;
