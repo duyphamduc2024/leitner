@@ -202,7 +202,7 @@ post("/api/answer", {"concept_id": ids[0], "answer": "nope"})
 s = j(c.get("/api/state" + S))
 check("only the missed card drops", s["boxes"][2]["count"] == 2, s["boxes"][2]["count"])
 
-print("\n== new-deck gate and the 100-card cap ==")
+print("\n== new-deck gate: the 100-card cap is the only brake ==")
 def answer_right(cid):
     post("/api/answer", {"concept_id": cid, "answer": A.CONCEPT_BY_ID[cid]["vi"][0]})
 
@@ -222,24 +222,44 @@ def promote_to(box):
     return j(c.get("/api/state" + S))
 
 s = j(c.get("/api/state" + S))
-check("blocked while deck 1 below box 4", s["deck"]["can_new_deck"] is False, s["deck"]["reason"])
-s = promote_to(4)
-check("deck 1 all at box 4", s["boxes"][3]["count"] == 20, [b["count"] for b in s["boxes"]])
-check("new deck allowed", s["deck"]["can_new_deck"] is True, s["deck"]["reason"])
+check("a fresh deck 1 does NOT block the next deck",
+      s["deck"]["can_new_deck"] is True, s["deck"]["reason"])
+check("the reason talks about the cap, not boxes",
+      "100" in s["deck"]["reason"], s["deck"]["reason"])
 
+# fill to the cap without promoting anything: cards stay in box 1
 for _ in range(4):
     post("/api/new_deck")
-    cs = j(c.get("/api/learn" + S))["cards"]
-    post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
-    s = promote_to(4)
-check("100 cards active", s["active_count"] == 100, s["active_count"])
+s = j(c.get("/api/state" + S))
+check("four more decks load straight away", s["active_count"] == 100, s["active_count"])
+check("nothing had to be promoted to get there",
+      s["boxes"][0]["count"] >= 95, [b["count"] for b in s["boxes"]])
 check("cap blocks a new deck", s["deck"]["can_new_deck"] is False, s["deck"]["reason"])
 check("reason points at box 5", "box 5" in s["deck"]["reason"], s["deck"]["reason"])
-check("POST new_deck refused", c.post("/api/new_deck", json={"session": zh_id}).status_code == 409)
+check("POST new_deck refused",
+      c.post("/api/new_deck", json={"profile": PROF, "session": zh_id}).status_code == 409)
 
+# a deck is trimmed rather than crossing the cap
+cs = j(c.get("/api/learn" + S))["cards"]
+post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
+for x in cs[:3]:
+    post("/api/retire", {"concept_id": x["concept_id"]})
+s = j(c.get("/api/state" + S))
+check("retiring three makes room for exactly three",
+      s["active_count"] == 97 and s["deck"]["next_size"] == 3,
+      (s["active_count"], s["deck"]["next_size"]))
+r = post("/api/new_deck")
+check("a partial deck is drawn", r["deck"]["last_size"] == 3, r["deck"]["last_size"])
+check("the cap is never crossed", r["active_count"] == 100, r["active_count"])
+
+# box 1's Test is still gated on Learn, so walk the new cards through first
+cs = j(c.get("/api/learn" + S))["cards"]
+post("/api/learn/complete", {"concept_ids": [x["concept_id"] for x in cs]})
 s = promote_to(5)
-check("boxes 1-4 empty", s["active_count"] == 0, s["active_count"])
+check("boxes 1-4 empty once promoted", s["active_count"] == 0,
+      [b["count"] for b in s["boxes"]])
 check("new deck allowed again", s["deck"]["can_new_deck"] is True)
+check("and offers a full deck", s["deck"]["next_size"] == 20, s["deck"]["next_size"])
 
 print("\n== learned counter ==")
 s = promote_to(6)
@@ -384,7 +404,8 @@ lv = j(c.post("/api/level", json={"profile": PROF, "session": psid, "words": 0})
 check("manual level moves the start point back", lv["session"]["placement"] == 0)
 check("and resets where decks are drawn", lv["session"]["used"] == 0)
 
-# clear deck 1 to box 4 so a second deck is allowed
+# the second deck no longer needs deck 1 promoted; walk Learn anyway so the
+# session is in a realistic state
 cs = j(c.get("/api/learn" + PS))["cards"]
 c.post("/api/learn/complete", json={"profile": PROF, "session": psid,
                                     "concept_ids": [x["concept_id"] for x in cs]})

@@ -11,7 +11,7 @@
     1: ["Learning box", "new and missed cards"],
     2: ["", "seen once"],
     3: ["", "settling in"],
-    4: ["", "a deck unlocks here"],
+    4: ["", "last box that counts to the cap"],
     5: ["", "frees up box 1–4 space"],
     6: ["", "learned"]
   };
@@ -602,6 +602,8 @@
 
     $("deck-reason").textContent = s.deck.reason;
     $("btn-new-deck").disabled = !s.deck.can_new_deck;
+    $("btn-new-deck").textContent = "+ New Deck (" +
+      (s.deck.next_size || s.deck.size) + " words)";
 
     var wrap = $("boxes");
     wrap.innerHTML = "";
@@ -877,7 +879,7 @@
   $("btn-new-deck").onclick = function () {
     api("/api/new_deck", { method: "POST", body: {} }).then(function (s) {
       render(s);
-      toast("Deck " + s.deck.number + " loaded — " + s.config.deck_size +
+      toast("Deck " + s.deck.number + " loaded — " + s.deck.last_size +
             " new words in box 1.");
     }).catch(function (e) { toast(e.message); });
   };

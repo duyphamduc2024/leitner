@@ -27,7 +27,7 @@ CONCEPTS_PATH = os.path.join(HERE, "data", "concepts.json")
 
 DECK_SIZE = 20          # cards drawn per deck
 ACTIVE_CAP = 100        # hard cap on cards sitting in boxes 1-4
-NEW_DECK_MIN_BOX = 4    # every card of the current deck must reach this box
+ACTIVE_MAX_BOX = 4      # boxes 1..4 count towards that cap
 BOXES = 6
 LEARNED_BOX = 6
 SCHEMA_VERSION = 4
@@ -499,7 +499,7 @@ def build_state(prof, sess):
         "config": {
             "deck_size": DECK_SIZE,
             "active_cap": ACTIVE_CAP,
-            "new_deck_min_box": NEW_DECK_MIN_BOX,
+            "active_max_box": ACTIVE_MAX_BOX,
             "boxes": BOXES,
         },
     }
@@ -521,35 +521,31 @@ def build_state(prof, sess):
         })
 
     current_deck = sess["deck_count"]
-    deck_rows = [r for r in rows if r["deck"] == current_deck]
-    active = [r for r in rows if r["box"] <= NEW_DECK_MIN_BOX]
+    active = [r for r in rows if r["box"] <= ACTIVE_MAX_BOX]
     unlearned_box1 = [r for r in rows if r["box"] == 1 and not r["seen_in_learn"]]
 
     pool = pair_pool(learn, sess["know_lang"])
     words_left = sess["next_index"] < len(pool)
-    deck_ready = bool(deck_rows) and all(r["box"] >= NEW_DECK_MIN_BOX for r in deck_rows)
-    room = len(active) + DECK_SIZE <= ACTIVE_CAP
+    # The cap is the only brake: while boxes 1-4 hold fewer than ACTIVE_CAP
+    # cards there is room for more, and a deck is trimmed so the cap is never
+    # crossed.
+    room = max(0, ACTIVE_CAP - len(active))
+    next_deck = min(DECK_SIZE, room)
 
-    if current_deck == 0:
-        reason = "Load your first deck of %d words to begin." % DECK_SIZE
-        can_new_deck = words_left
-    elif not words_left:
+    if not words_left:
         reason = ("You have reached the end of the %d words available for %s."
                   % (len(pool), session_json(sess)["label"]))
         can_new_deck = False
-    elif not deck_ready:
-        behind = sum(1 for r in deck_rows if r["box"] < NEW_DECK_MIN_BOX)
-        reason = ("%d card%s of deck %d still below box %d."
-                  % (behind, "" if behind == 1 else "s", current_deck, NEW_DECK_MIN_BOX))
+    elif room == 0:
+        reason = ("Boxes 1-4 are full at %d cards. Promote some into box 5 or 6 "
+                  "to make room." % ACTIVE_CAP)
         can_new_deck = False
-    elif not room:
-        reason = ("Boxes 1-4 hold %d of %d cards. Promote %d more into box 5 or 6 "
-                  "to make room for a new deck."
-                  % (len(active), ACTIVE_CAP, len(active) + DECK_SIZE - ACTIVE_CAP))
-        can_new_deck = False
+    elif current_deck == 0:
+        reason = "Load your first deck of %d words to begin." % next_deck
+        can_new_deck = True
     else:
-        reason = ("Deck %d is at box %d or better. Ready for %d more."
-                  % (current_deck, NEW_DECK_MIN_BOX, DECK_SIZE))
+        reason = ("Boxes 1-4 hold %d of %d cards — room for %d more."
+                  % (len(active), ACTIVE_CAP, next_deck))
         can_new_deck = True
 
     learned = session_learned(sid)
@@ -561,6 +557,7 @@ def build_state(prof, sess):
         "deck": {
             "number": current_deck,
             "size": DECK_SIZE,
+            "next_size": next_deck,
             "can_new_deck": can_new_deck,
             "reason": reason,
         },
@@ -706,9 +703,13 @@ def api_new_deck():
     # already seen. Placement and a manual level change both move the start
     # point, possibly backwards, so a plain slice could hand out duplicates
     # and silently produce a short deck.
+    active_now = conn.execute(
+        "SELECT COUNT(*) FROM card WHERE session_id = ? AND retired = 0 AND box <= ?",
+        (sess["id"], ACTIVE_MAX_BOX)).fetchone()[0]
+    want = min(DECK_SIZE, max(0, ACTIVE_CAP - active_now))
     start = sess["next_index"]
     chunk, i = [], start
-    while i < len(pool) and len(chunk) < DECK_SIZE:
+    while i < len(pool) and len(chunk) < want:
         if pool[i] not in have:
             chunk.append(pool[i])
         i += 1
@@ -721,7 +722,9 @@ def api_new_deck():
     conn.execute("UPDATE session SET next_index = ?, deck_count = ?, last_used = ?"
                  " WHERE id = ?", (i, deck_no, now(), sess["id"]))
     conn.commit()
-    return jsonify(build_state(prof, get_session(prof, sess["id"])))
+    out = build_state(prof, get_session(prof, sess["id"]))
+    out["deck"]["last_size"] = len(chunk)
+    return jsonify(out)
 
 
 @app.route("/api/learn")
