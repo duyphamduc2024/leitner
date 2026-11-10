@@ -275,6 +275,9 @@
       ? "Who's learning?" : "Welcome — set up a profile";
 
     state.profiles.forEach(function (p) {
+      var row = document.createElement("div");
+      row.className = "who-row";
+
       var b = document.createElement("button");
       b.className = "who-card";
       b.style.setProperty("--av", p.avatar.colour);
@@ -282,9 +285,19 @@
         '<span class="who-card-av" style="background:' + p.avatar.colour + '">' +
           p.avatar.glyph + "</span>" +
         "<span><span class=\"who-card-name\">" + escapeHtml(p.name) + "</span>" +
-        '<span class="who-card-meta">since ' + p.created_at + "</span></span>";
+        '<span class="who-card-meta">' + describeProfile(p) + "</span></span>";
       b.onclick = function () { chooseProfile(p.name); };
-      list.appendChild(b);
+      row.appendChild(b);
+
+      var del = document.createElement("button");
+      del.className = "who-del";
+      del.innerHTML = "&#10005;";
+      del.title = "Delete " + p.name;
+      del.setAttribute("aria-label", "Delete profile " + p.name);
+      del.onclick = function (ev) { ev.stopPropagation(); deleteProfile(p); };
+      row.appendChild(del);
+
+      list.appendChild(row);
     });
 
     var grid = $("av-grid");
@@ -299,6 +312,52 @@
       grid.appendChild(b);
     });
     validateWhoName();
+  }
+
+  function describeProfile(p) {
+    if (!p.sessions) return "nothing learned yet";
+    var bits = [p.sessions + (p.sessions === 1 ? " language" : " languages")];
+    if (p.cards) bits.push(p.cards + " cards");
+    if (p.learned) bits.push(p.learned + " learned");
+    return bits.join(" · ");
+  }
+
+  function deleteProfile(p) {
+    // Spell out exactly what goes, because nothing here can be undone.
+    var loses = [];
+    if (p.sessions) loses.push(p.sessions + (p.sessions === 1 ? " language" : " languages"));
+    if (p.cards) loses.push(p.cards + " card" + (p.cards === 1 ? "" : "s") + " in play");
+    if (p.learned) loses.push(p.learned + " word" + (p.learned === 1 ? "" : "s") + " learned");
+
+    var msg = "Delete the profile \u201C" + p.name + "\u201D?\n\n";
+    msg += loses.length
+      ? "This permanently deletes " + loses.join(", ") + ".\n\nThis cannot be undone."
+      : "It has no progress yet, so nothing is lost.";
+    if (!confirm(msg)) return;
+
+    // A profile with real progress is worth a second, deliberate step.
+    if (p.learned >= 20) {
+      var typed = prompt("\u201C" + p.name + "\u201D has " + p.learned +
+        " words learned.\n\nType the profile name to confirm deletion:");
+      if (typed === null) return;
+      if (typed.trim() !== p.name) { toast("Name did not match — nothing deleted."); return; }
+    }
+
+    api("/api/profile/delete", { method: "POST", body: { name: p.name } })
+      .then(function (st) {
+        if (profile === p.name) {
+          profile = st.profile ? st.profile.name : null;
+          sessionId = null;
+          if (profile) localStorage.setItem("leitner.profile", profile);
+          else localStorage.removeItem("leitner.profile");
+          localStorage.removeItem("leitner.session");
+        }
+        render(st);
+        renderVoiceOptions();
+        toast("Deleted \u201C" + p.name + "\u201D.");
+        if (!st.profile) { renderWho(); return; }
+        renderWho();
+      }).catch(function (e) { toast(e.message); });
   }
 
   function escapeHtml(t) {

@@ -327,8 +327,14 @@ Everything lives in `data/leitner.db` (SQLite): every session, which box each ca
 progress, right/wrong counts, retired cards, milestone dates, and how far into the word list
 each session has drawn. It survives reloads, restarts and switching browsers.
 
-The avatar button in the header switches profile; **+ create another** is in the same panel.
-Each profile has its own independent set of sessions.
+The avatar button in the header switches profile; creating and deleting live in the same
+panel. Each profile has its own independent set of sessions.
+
+**Deleting a profile removes everything it has learned** — its sessions, its cards and its
+milestones — and there is no undo. So the ✕ beside a profile asks first, and names exactly
+what is about to go ("1 language, 20 cards in play, 20 words learned"). Past 20 words learned
+it also asks you to type the profile name, because by then there is enough in it to be worth
+a deliberate second step.
 **Reset this learning session** under Audio & settings wipes one language pair back to word 1;
 your other languages and the word table are untouched.
 
@@ -341,7 +347,7 @@ and never gets committed.
 
 | Path | What |
 |---|---|
-| `app.py` | Flask server, SQLite schema, profiles, sessions, box rules, per-language grading, placement test, levels and milestones, 15 JSON endpoints |
+| `app.py` | Flask server, SQLite schema, profiles, sessions, box rules, per-language grading, placement test, levels and milestones, 17 JSON endpoints |
 | `build_concepts.py` | Builds `data/concepts.json` from the curated core plus the four sources |
 | `data/core_concepts.tsv` | The 365 hand-written concepts — edit this to fix or add words |
 | `data/concepts.json` | 17,322 generated concepts (committed, so no build is needed) |
@@ -374,12 +380,12 @@ LANGUAGES = {...}       # code -> display name, native name, speech-synthesis ta
 python3 tests/test_rules.py
 ```
 
-175 checks against a throwaway database: the concept table and every language pair, grading in
+184 checks against a throwaway database: the concept table and every language pair, grading in
 all four languages (including Vietnamese tone-stripping and Mandarin pinyin), session creation
 and isolation, the Learn gate, promotion and demotion, the new-deck gate, the per-box limit,
 the learned counter, the per-box limit, proficiency levels, milestone unlocking and dates, the text sent to
 audio, the placement test's bands and estimator, manual level setting, deck drawing after the
-start point moves, profile creation and isolation, retiring, and reset. No network, no fixtures to install.
+start point moves, profile creation, deletion and isolation, retiring, and reset. No network, no fixtures to install.
 
 ---
 

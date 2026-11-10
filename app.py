@@ -386,9 +386,20 @@ def get_profile(name=None):
 
 
 def profile_json(row):
+    pid = row["id"]
+    stats = db().execute(
+        "SELECT (SELECT COUNT(*) FROM session WHERE profile_id = ?) AS sessions,"
+        "       (SELECT COUNT(*) FROM card c JOIN session s ON s.id = c.session_id"
+        "          WHERE s.profile_id = ? AND c.retired = 0) AS cards,"
+        "       (SELECT COUNT(*) FROM card c JOIN session s ON s.id = c.session_id"
+        "          WHERE s.profile_id = ? AND c.learned_at IS NOT NULL) AS learned",
+        (pid, pid, pid)).fetchone()
     return {"name": row["name"],
             "avatar": avatar_json(row["avatar"] if "avatar" in row.keys() else 0),
-            "created_at": (row["created_at"] or "")[:10]}
+            "created_at": (row["created_at"] or "")[:10],
+            "sessions": stats["sessions"],
+            "cards": stats["cards"],
+            "learned": stats["learned"]}
 
 
 def all_profiles():
@@ -651,6 +662,35 @@ def api_profile():
         conn.commit()
     prof = get_profile(name)
     return jsonify(build_state(prof, get_session(prof)))
+
+
+@app.route("/api/profile/delete", methods=["POST"])
+def api_profile_delete():
+    """Delete a profile and everything it has learned.
+
+    The confirmation lives in the UI, which spells out what is about to go.
+    There is no undo: the sessions and cards go with it, by foreign key.
+    """
+    name = str(body().get("name", "")).strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    conn = db()
+    row = conn.execute("SELECT * FROM profile WHERE name = ?", (name,)).fetchone()
+    if row is None:
+        return jsonify({"error": "No profile called %s." % name}), 404
+
+    gone = profile_json(row)
+    # belt and braces: the schema cascades, but only while foreign keys are on
+    conn.execute("DELETE FROM card WHERE session_id IN"
+                 " (SELECT id FROM session WHERE profile_id = ?)", (row["id"],))
+    conn.execute("DELETE FROM session WHERE profile_id = ?", (row["id"],))
+    conn.execute("DELETE FROM profile WHERE id = ?", (row["id"],))
+    conn.commit()
+
+    prof = get_profile()          # the only one left, or None
+    out = build_state(prof, get_session(prof) if prof else None)
+    out["deleted"] = gone
+    return jsonify(out)
 
 
 @app.route("/api/profile/exists")

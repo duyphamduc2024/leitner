@@ -493,3 +493,17 @@ output { font-family: var(--mono); color: var(--text); }
 .box-cap { font-size: 13px; font-weight: 600; color: var(--text-faint); }
 .box-count-full { color: var(--bad); }
 .box-count-full .box-cap { color: var(--bad); opacity: .7; }
+
+/* delete a profile */
+.who-row { display: flex; align-items: stretch; gap: 6px; }
+.who-row .who-card { flex: 1; }
+.who-del {
+  flex: none; width: 34px; border-radius: 9px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line);
+  color: var(--text-faint); font-size: 13px; line-height: 1;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.who-del:hover {
+  color: var(--bad); border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}

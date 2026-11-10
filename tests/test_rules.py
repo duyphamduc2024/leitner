@@ -69,6 +69,42 @@ check("profile names round-trip",
 
 PROF = "Duy"
 
+print("\n== deleting a profile ==")
+st = j(c.post("/api/profile", json={"name": "Temp", "avatar": 5}))
+tsid = j(c.post("/api/session", json={"profile": "Temp", "learn": "es", "know": "en"}))["session"]["id"]
+j(c.post("/api/new_deck", json={"profile": "Temp", "session": tsid}))
+st = j(c.get("/api/state?profile=Temp"))
+temp = [p for p in st["profiles"] if p["name"] == "Temp"][0]
+check("a profile reports what a delete would destroy",
+      temp["sessions"] == 1 and temp["cards"] == 20 and temp["learned"] == 0, temp)
+
+check("deleting an unknown profile is refused",
+      c.post("/api/profile/delete", json={"name": "ghost"}).status_code == 404)
+check("deleting a blank name is refused",
+      c.post("/api/profile/delete", json={"name": "  "}).status_code == 400)
+
+before = {p["name"] for p in st["profiles"]}
+res = j(c.post("/api/profile/delete", json={"name": "Temp"}))
+check("the deleted profile is gone",
+      {p["name"] for p in res["profiles"]} == before - {"Temp"},
+      [p["name"] for p in res["profiles"]])
+check("the response says what was removed",
+      res["deleted"]["name"] == "Temp" and res["deleted"]["cards"] == 20,
+      res["deleted"])
+check("its session went with it",
+      c.get("/api/state?profile=Temp").get_json()["profile"] is None)
+import sqlite3 as _sq
+_con = _sq.connect(A.DB_PATH)
+_orphan_s = _con.execute(
+    "SELECT COUNT(*) FROM session WHERE profile_id NOT IN (SELECT id FROM profile)").fetchone()[0]
+_orphan_c = _con.execute(
+    "SELECT COUNT(*) FROM card WHERE session_id NOT IN (SELECT id FROM session)").fetchone()[0]
+_con.close()
+check("orphan sessions: none", _orphan_s == 0, _orphan_s)
+check("orphan cards: none", _orphan_c == 0, _orphan_c)
+check("other profiles are untouched",
+      j(c.get("/api/state?profile=Duy"))["profile"]["name"] == "Duy")
+
 print("\n== concept table ==")
 check("concepts loaded", len(A.CONCEPTS) > 5000, len(A.CONCEPTS))
 for a, b in [("es", "en"), ("en", "es"), ("vi", "en"), ("zh", "en"),
